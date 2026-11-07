@@ -129,7 +129,8 @@ class DarkDiff(nn.Module):
         for blk in net.down_blocks:
             kw = {"encoder_hidden_states": enc} if getattr(blk, "has_cross_attention", False) else {}
             x, _ = blk(hidden_states=x, temb=emb, **kw)
-        net.mid_block(x, emb, encoder_hidden_states=enc)
+        if net.mid_block is not None:  # distilled U-Nets (bk-sdm-*-small/tiny) have no mid block
+            net.mid_block(x, emb, encoder_hidden_states=enc)
         return {n: self._cap.pop(n) for n in self._regions}
 
     def denoise(self, z_t, t, ctx):

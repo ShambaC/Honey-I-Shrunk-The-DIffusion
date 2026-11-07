@@ -37,12 +37,8 @@ def fake_load_pair(noisy_path, gt_path, ratio):
     return tuple(rng.random((64, 64, 3), dtype=np.float32) for _ in range(3))
 
 
-def fake_unet_sched(model_id):
-    return tiny_unet(), DDPMScheduler(prediction_type="v_prediction")
-
-
-def fake_prompt_embeds(model_id):
-    return torch.randn(1, 77, 32, device=DEV)
+def fake_backbone(name, weights=True):
+    return tiny_unet(), DDPMScheduler(prediction_type="v_prediction"), torch.randn(1, 77, 32, device=DEV)
 
 
 def fake_pairs(name, root, split):
@@ -56,8 +52,7 @@ def test_end_to_end():
         st.enter_context(mock.patch.object(train_vae, "VAELoss", functools.partial(VAELoss, disc_start=0)))
         st.enter_context(mock.patch.object(lpips, "LPIPS", lambda net: real_lpips(net="vgg")))
         for mod in (train_ldm, evaluate):
-            st.enter_context(mock.patch.object(mod, "load_pretrained", fake_unet_sched))
-            st.enter_context(mock.patch.object(mod, "empty_prompt_embeds", fake_prompt_embeds))
+            st.enter_context(mock.patch.object(mod, "load_backbone", fake_backbone))
         for mod in (train_vae, train_ldm, evaluate):
             st.enter_context(mock.patch.object(mod, "get_pairs", fake_pairs))
 

@@ -10,8 +10,9 @@ from torchmetrics.functional.image import peak_signal_noise_ratio, structural_si
 from torchvision.utils import save_image
 from tqdm import tqdm
 
+from darkdiff.backbones import BACKBONES, load_backbone
 from darkdiff.data import PairDataset, get_pairs
-from darkdiff.model import SD_MODEL, DarkDiff, empty_prompt_embeds, load_pretrained
+from darkdiff.model import SD_MODEL, DarkDiff
 from darkdiff.vae import ResidualVAE
 
 
@@ -19,7 +20,9 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Sample full test images with DarkDiff and report PSNR/SSIM/LPIPS.")
     p.add_argument("--data-root", default="data")
     p.add_argument("--dataset", default="sid", choices=["sid", "eld", "lrd"])
-    p.add_argument("--model-id", default=SD_MODEL)
+    p.add_argument("--backbone", default="sd21", choices=BACKBONES,
+                   help="U-Net: must match the backbone the --ckpt was trained with")
+    p.add_argument("--model-id", default=SD_MODEL, help="SD VAE source for ResidualVAE (shared by all backbones)")
     p.add_argument("--vae-ckpt", required=True)
     p.add_argument("--ckpt", required=True)
     p.add_argument("--steps", type=int, default=50)
@@ -34,10 +37,10 @@ def main(argv=None):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    unet, sched = load_pretrained(args.model_id)
+    unet, sched, embeds = load_backbone(args.backbone)
     rvae = ResidualVAE.from_pretrained(args.model_id)
     rvae.load_state_dict(torch.load(args.vae_ckpt, map_location="cpu", weights_only=True))
-    model = DarkDiff(unet, rvae, sched, empty_prompt_embeds(args.model_id), region_size=args.region_size)
+    model = DarkDiff(unet, rvae, sched, embeds, region_size=args.region_size)
     missing, unexpected = model.load_state_dict(
         torch.load(args.ckpt, map_location="cpu", weights_only=True), strict=False)
     # strict=False only so the frozen rvae.* keys (not in the checkpoint) are allowed to be missing

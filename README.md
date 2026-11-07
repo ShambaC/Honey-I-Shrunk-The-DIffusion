@@ -28,7 +28,27 @@ uv run evaluate.py --dataset sid --vae-ckpt runs/vae/vae_last.pt --ckpt runs/ldm
 uv run evaluate.py --dataset eld --vae-ckpt runs/vae/vae_last.pt --ckpt runs/ldm/ldm_last.pt  # SID model, guidance 2.5
 ```
 
-Tests (tiny random models, no downloads): `uv run tests/test_isp.py`, `uv run tests/test_vae.py`, `uv run tests/test_model.py`, `uv run tests/test_smoke.py`.
+## Lightweight backbones
+
+`--backbone` on `train_ldm.py` / `evaluate.py` picks the U-Net (`darkdiff/backbones.py`):
+
+| Name | Source | Notes |
+|---|---|---|
+| `sd21` | `sd2-community/stable-diffusion-2-1` | Full SD 2.1 U-Net, the paper baseline |
+| `bk-sdm-v2-base`, `-small`, `-tiny` | `nota-ai/bk-sdm-v2-*` | Pretrained, distilled from SD 2.1-base, blocks removed |
+| `small-sd`, `tiny-sd` | `segmind/small-sd`, `segmind/tiny-sd` | Pretrained, distilled from SD 1.5 |
+| `compact-unet` | from scratch | SD 2.1 layout at half width, one layer per block |
+| `mobilenetv3-unet` | from scratch | `compact-unet` with MobileNetV3-style inverted residual blocks |
+
+```sh
+uv run train_vae.py --dataset sid --out runs/vae                     # stage 1, once; shared by all backbones
+uv run benchmark_backbones.py                                         # efficiency only: no data, no checkpoints
+uv run sweep_backbones.py --vae-ckpt runs/vae/vae_last.pt             # train + evaluate all backbones, then summarize
+```
+
+`sweep_backbones.py` writes `runs/backbones/summary.csv`, one row per backbone: PSNR / SSIM / LPIPS for `sid` and `eld` (or `lrd`), the benchmark columns (`unet_params_M`, `ctx_params_M`, `trainable_params_M`, `unet_gflops`, `ctx_gflops`, `infer_s`, `infer_mem_GB`, `train_step_s`, `train_mem_GB`), and `pareto`. Rows are sorted by primary-dataset LPIPS. `pareto` is True when no other backbone has both lower-or-equal LPIPS and lower-or-equal `trainable_params_M`, with one strictly lower. `OOM` in the benchmark marks a run that does not fit the GPU.
+
+Tests (tiny random models, no downloads): `uv run tests/test_isp.py`, `uv run tests/test_vae.py`, `uv run tests/test_model.py`, `uv run tests/test_backbones.py`, `uv run tests/test_benchmark.py`, `uv run tests/test_smoke.py`.
 
 ## Choices the paper does not specify
 
