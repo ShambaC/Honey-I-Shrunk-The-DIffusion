@@ -71,6 +71,7 @@ def main(argv=None):
     p.add_argument("--steps", type=int, default=50)
     p.add_argument("--out", default="runs/backbones")
     p.add_argument("--skip-train", action="store_true", help="only evaluate and summarize existing checkpoints")
+    p.add_argument("--gpu", type=int, default=0, help="CUDA device index on multi-GPU systems")
     args = p.parse_args(argv)
 
     out = Path(args.out)
@@ -81,7 +82,8 @@ def main(argv=None):
         if not args.skip_train and not ckpt.exists():
             cmd = ["uv", "run", "train_ldm.py", "--backbone", b, "--dataset", args.dataset,
                    "--data-root", args.data_root, "--vae-ckpt", args.vae_ckpt, "--epochs", str(args.epochs),
-                   "--crop", str(args.crop), "--batch-size", str(args.batch_size), "--out", str(run / "ldm")]
+                   "--crop", str(args.crop), "--batch-size", str(args.batch_size), "--out", str(run / "ldm"),
+                   "--gpu", str(args.gpu)]
             if b in SCRATCH:
                 cmd += ["--lr-unet", "2.5e-4"]  # random-init U-Nets need the higher lr; 5e-5 is for fine-tuning pretrained
             subprocess.run(cmd, check=True)
@@ -93,11 +95,11 @@ def main(argv=None):
                 continue
             subprocess.run(["uv", "run", "evaluate.py", "--backbone", b, "--dataset", d,
                             "--data-root", args.data_root, "--vae-ckpt", args.vae_ckpt, "--ckpt", str(ckpt),
-                            "--steps", str(args.steps), "--out", str(run / f"eval_{d}")], check=True)
+                            "--steps", str(args.steps), "--out", str(run / f"eval_{d}"), "--gpu", str(args.gpu)], check=True)
     if not (out / "benchmark.csv").exists():
         subprocess.run(["uv", "run", "benchmark_backbones.py", "--backbones", *args.backbones,
                         "--crop", str(args.crop), "--steps", str(args.steps),
-                        "--out", str(out / "benchmark.csv")], check=True)
+                        "--out", str(out / "benchmark.csv"), "--gpu", str(args.gpu)], check=True)
     summarize(out, args.backbones, datasets)
 
 

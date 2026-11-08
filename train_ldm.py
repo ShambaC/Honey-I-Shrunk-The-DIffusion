@@ -29,9 +29,12 @@ def main(argv=None):
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--out", default="runs/ldm")
     p.add_argument("--save-every", type=int, default=100)
+    p.add_argument("--gpu", type=int, default=0, help="CUDA device index on multi-GPU systems")
     args = p.parse_args(argv)
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
+    if dev == "cuda":
+        torch.cuda.set_device(args.gpu)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 

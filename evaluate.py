@@ -30,9 +30,12 @@ def main(argv=None):
     p.add_argument("--region-size", type=int, default=8)
     p.add_argument("--out", default="runs/eval")
     p.add_argument("--save-images", action="store_true")
+    p.add_argument("--gpu", type=int, default=0, help="CUDA device index on multi-GPU systems")
     args = p.parse_args(argv)
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
+    if dev == "cuda":
+        torch.cuda.set_device(args.gpu)
     guidance = args.guidance if args.guidance is not None else (2.5 if args.dataset == "eld" else 2.0)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)

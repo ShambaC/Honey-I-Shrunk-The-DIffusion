@@ -120,7 +120,9 @@ def main(argv=None):
     p.add_argument("--steps", type=int, default=50)
     p.add_argument("--guidance", type=float, default=2.0)
     p.add_argument("--out", default="runs/backbones/benchmark.csv")
+    p.add_argument("--gpu", type=int, default=0, help="CUDA device index on multi-GPU systems")
     args = p.parse_args(argv)
+    torch.cuda.set_device(args.gpu)
 
     rows = []
     for name in tqdm(args.backbones, desc="backbones"):
