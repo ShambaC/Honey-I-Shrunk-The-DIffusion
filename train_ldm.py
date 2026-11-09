@@ -18,7 +18,7 @@ def main(argv=None):
     p.add_argument("--backbone", default="sd21", choices=BACKBONES,
                    help="U-Net: pretrained SD distillation or scratch compact U-Net (see darkdiff/backbones.py)")
     p.add_argument("--model-id", default=SD_MODEL, help="SD VAE source for ResidualVAE (shared by all backbones)")
-    p.add_argument("--vae-ckpt", required=True)
+    p.add_argument("--vae-ckpt", help="stage-1 VAE; omit to use the pretrained SD VAE (skips stay zero = no residual path)")
     p.add_argument("--crop", type=int, default=1200)
     p.add_argument("--batch-size", type=int, default=1)
     p.add_argument("--epochs", type=int, default=3000)
@@ -40,7 +40,8 @@ def main(argv=None):
 
     unet, sched, embeds = load_backbone(args.backbone)
     rvae = ResidualVAE.from_pretrained(args.model_id)
-    rvae.load_state_dict(torch.load(args.vae_ckpt, map_location="cpu", weights_only=True))
+    if args.vae_ckpt:
+        rvae.load_state_dict(torch.load(args.vae_ckpt, map_location="cpu", weights_only=True))
     model = DarkDiff(unet, rvae, sched, embeds, region_size=args.region_size)
     model = model.to(dev).train()
     opt = torch.optim.Adam(model.param_groups(args.lr_new, args.lr_unet))

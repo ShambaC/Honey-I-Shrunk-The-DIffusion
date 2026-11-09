@@ -44,6 +44,7 @@ uv run evaluate.py --dataset eld --vae-ckpt runs/vae/vae_last.pt --ckpt runs/ldm
 uv run train_vae.py --dataset sid --out runs/vae                     # stage 1, once; shared by all backbones
 uv run benchmark_backbones.py                                         # efficiency only: no data, no checkpoints
 uv run sweep_backbones.py --vae-ckpt runs/vae/vae_last.pt             # train + evaluate all backbones, then summarize
+uv run sweep_backbones.py                                             # same, pretrained SD VAE: skips stage 1, no residual path
 ```
 
 `sweep_backbones.py` writes `runs/backbones/summary.csv`, one row per backbone: PSNR / SSIM / LPIPS for `sid` and `eld` (or `lrd`), the benchmark columns (`unet_params_M`, `ctx_params_M`, `trainable_params_M`, `unet_gflops`, `ctx_gflops`, `infer_s`, `infer_mem_GB`, `train_step_s`, `train_mem_GB`), and `pareto`. Rows are sorted by primary-dataset LPIPS. `pareto` is True when no other backbone has both lower-or-equal LPIPS and lower-or-equal `trainable_params_M`, with one strictly lower. `OOM` in the benchmark marks a run that does not fit the GPU.

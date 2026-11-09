@@ -23,7 +23,7 @@ def main(argv=None):
     p.add_argument("--backbone", default="sd21", choices=BACKBONES,
                    help="U-Net: must match the backbone the --ckpt was trained with")
     p.add_argument("--model-id", default=SD_MODEL, help="SD VAE source for ResidualVAE (shared by all backbones)")
-    p.add_argument("--vae-ckpt", required=True)
+    p.add_argument("--vae-ckpt", help="stage-1 VAE; omit to use the pretrained SD VAE (skips stay zero = no residual path)")
     p.add_argument("--ckpt", required=True)
     p.add_argument("--steps", type=int, default=50)
     p.add_argument("--guidance", type=float, default=None)
@@ -42,7 +42,8 @@ def main(argv=None):
 
     unet, sched, embeds = load_backbone(args.backbone)
     rvae = ResidualVAE.from_pretrained(args.model_id)
-    rvae.load_state_dict(torch.load(args.vae_ckpt, map_location="cpu", weights_only=True))
+    if args.vae_ckpt:
+        rvae.load_state_dict(torch.load(args.vae_ckpt, map_location="cpu", weights_only=True))
     model = DarkDiff(unet, rvae, sched, embeds, region_size=args.region_size)
     missing, unexpected = model.load_state_dict(
         torch.load(args.ckpt, map_location="cpu", weights_only=True), strict=False)

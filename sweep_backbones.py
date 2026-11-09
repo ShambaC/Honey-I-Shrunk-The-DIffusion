@@ -1,5 +1,5 @@
 """Train, evaluate and compare every DarkDiff backbone. Each step is a subprocess so GPU memory is freed between runs.
-Run: uv run sweep_backbones.py --vae-ckpt runs/vae/vae_last.pt"""
+Run: uv run sweep_backbones.py [--vae-ckpt runs/vae/vae_last.pt]"""
 import argparse
 import csv
 import json
@@ -64,7 +64,7 @@ def main(argv=None):
     p.add_argument("--backbones", nargs="+", choices=BACKBONES, default=list(BACKBONES))
     p.add_argument("--dataset", default="sid", choices=["sid", "lrd"])
     p.add_argument("--data-root", default="data")
-    p.add_argument("--vae-ckpt", required=True, help="stage-1 VAE, shared by all backbones")
+    p.add_argument("--vae-ckpt", help="stage-1 VAE, shared by all backbones; omit to use the pretrained SD VAE")
     p.add_argument("--epochs", type=int, default=3000)
     p.add_argument("--crop", type=int, default=1200)
     p.add_argument("--batch-size", type=int, default=1)
@@ -76,12 +76,13 @@ def main(argv=None):
 
     out = Path(args.out)
     datasets = ["sid", "eld"] if args.dataset == "sid" else ["lrd"]  # paper evaluates ELD with the SID model
+    vae = ["--vae-ckpt", args.vae_ckpt] if args.vae_ckpt else []
     for b in args.backbones:
         run = out / b
         ckpt = run / "ldm" / "ldm_last.pt"
         if not args.skip_train and not ckpt.exists():
             cmd = ["uv", "run", "train_ldm.py", "--backbone", b, "--dataset", args.dataset,
-                   "--data-root", args.data_root, "--vae-ckpt", args.vae_ckpt, "--epochs", str(args.epochs),
+                   "--data-root", args.data_root, *vae, "--epochs", str(args.epochs),
                    "--crop", str(args.crop), "--batch-size", str(args.batch_size), "--out", str(run / "ldm"),
                    "--gpu", str(args.gpu)]
             if b in SCRATCH:
@@ -94,7 +95,7 @@ def main(argv=None):
             if (run / f"eval_{d}" / "metrics.json").exists():
                 continue
             subprocess.run(["uv", "run", "evaluate.py", "--backbone", b, "--dataset", d,
-                            "--data-root", args.data_root, "--vae-ckpt", args.vae_ckpt, "--ckpt", str(ckpt),
+                            "--data-root", args.data_root, *vae, "--ckpt", str(ckpt),
                             "--steps", str(args.steps), "--out", str(run / f"eval_{d}"), "--gpu", str(args.gpu)], check=True)
     if not (out / "benchmark.csv").exists():
         subprocess.run(["uv", "run", "benchmark_backbones.py", "--backbones", *args.backbones,
