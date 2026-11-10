@@ -2,6 +2,7 @@ import lpips
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 from diffusers import AutoencoderKL
 from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
 
@@ -44,13 +45,19 @@ class ResidualVAE(nn.Module):
 
     def decode(self, z, feats):
         dec = self.vae.decoder
+        # full-res decoder activations dominate training memory (~28 GB at 1200px): recompute per block in backward
+        ckpt = (lambda f, *a: checkpoint(f, *a, use_reentrant=False)) if torch.is_grad_enabled() else (lambda f, *a: f(*a))
         h = self.vae.post_quant_conv(z) if self.vae.post_quant_conv is not None else z
-        h = dec.mid_block(dec.conv_in(h))
+        h = ckpt(dec.mid_block, dec.conv_in(h))
         n = len(self.skips)
         for j, up in enumerate(dec.up_blocks):
             b = n - 1 - j
-            h = up(h + self.skips[b](feats[b]))
-        return dec.conv_out(dec.conv_act(dec.conv_norm_out(h)))
+            h = h + self.skips[b](feats[b])
+            for resnet in up.resnets:  # shortcut: assumes UpDecoderBlock2D (resnets + upsamplers), as in the SD VAE
+                h = ckpt(resnet, h, None)
+            for us in up.upsamplers or []:
+                h = ckpt(us, h)
+        return ckpt(lambda x: dec.conv_out(dec.conv_act(dec.conv_norm_out(x))), h)
 
     def forward(self, x, sample_posterior=True):
         posterior, feats = self.encode(x)
