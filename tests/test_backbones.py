@@ -70,6 +70,8 @@ def test_load_backbone_scratch_no_download():
     unet, sched, embeds = load_backbone("compact-unet", weights=False)
     assert embeds.shape == (1, 77, 1024), embeds.shape
     assert sched.config.prediction_type == "epsilon"
+    from diffusers import DDIMScheduler
+    assert not DDIMScheduler.from_config(sched.config).config.clip_sample, "DDIM sampling would clip latents to [-1, 1]"
     assert not any(isinstance(m, MBConvBlock) for m in unet.modules())
 
 

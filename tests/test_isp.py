@@ -78,6 +78,27 @@ def test_dataset_shapes_and_consistency():
         data.load_pair = real
 
 
+def test_load_retry():
+    import rawpy
+    from unittest import mock
+    calls = []
+
+    def flaky(n, g, r):
+        calls.append(n)
+        if len(calls) == 1:
+            raise rawpy.LibRawIOError(b"Input/output error")
+        return "ok"
+
+    with mock.patch.object(data, "load_pair", flaky):
+        assert data._load_retry("n.ARW", "g.ARW", 1.0, wait=0) == "ok" and len(calls) == 2
+    with mock.patch.object(data, "load_pair", mock.Mock(side_effect=OSError("EIO"))):
+        try:
+            data._load_retry("n.ARW", "g.ARW", 1.0, wait=0)
+            raise AssertionError("expected OSError")
+        except OSError as e:
+            assert "n.ARW" in str(e) and "g.ARW" in str(e), e
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

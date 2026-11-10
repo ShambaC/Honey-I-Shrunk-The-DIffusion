@@ -73,8 +73,9 @@ def load_backbone(name, weights=True):
     """Return (unet, scheduler, prompt_embeds). weights=False builds random U-Nets from JSON configs only."""
     if name in SCRATCH:
         unet = compact_unet() if name == "compact-unet" else mobilenetv3_unet()
-        sched = DDPMScheduler(num_train_timesteps=1000, beta_schedule="scaled_linear",
-                              beta_start=0.00085, beta_end=0.012, prediction_type="epsilon")
+        # SD's scheduler settings. clip_sample must be off: the diffusers default clips sampled latents to [-1, 1]
+        sched = DDPMScheduler(num_train_timesteps=1000, beta_schedule="scaled_linear", beta_start=0.00085,
+                              beta_end=0.012, prediction_type="epsilon", clip_sample=False, steps_offset=1)
         embeds = empty_prompt_embeds(SD_MODEL) if weights else torch.zeros(1, 77, CROSS_DIM)
         return unet, sched, embeds
 

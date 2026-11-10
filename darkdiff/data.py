@@ -1,8 +1,10 @@
 import random
 import re
+import time
 from pathlib import Path
 
 import numpy as np
+import rawpy
 import torch
 from torch.utils.data import Dataset
 
@@ -19,6 +21,17 @@ def _to_tensor(a):
     return torch.from_numpy(np.ascontiguousarray(a.transpose(2, 0, 1))) * 2 - 1
 
 
+def _load_retry(noisy_path, gt_path, ratio, tries=3, wait=5.0):
+    """load_pair, retried: network mounts (NAS) return transient EIO. The final error names both files."""
+    for k in range(tries):
+        try:
+            return load_pair(noisy_path, gt_path, ratio)
+        except (OSError, rawpy.LibRawIOError) as e:
+            if k == tries - 1:
+                raise OSError(f"cannot read {noisy_path} / {gt_path} after {tries} tries: {e}") from e
+            time.sleep(wait)
+
+
 class PairDataset(Dataset):
     def __init__(self, pairs, crop, train):
         self.pairs = pairs
@@ -31,7 +44,7 @@ class PairDataset(Dataset):
     def __getitem__(self, i):
         noisy_path, gt_path, ratio = self.pairs[i]
         # shortcut: raw files are decoded on every __getitem__ (no cache), add a cache when loading is the bottleneck
-        noisy, clean, srgb = load_pair(noisy_path, gt_path, ratio)
+        noisy, clean, srgb = _load_retry(noisy_path, gt_path, ratio)
         H, W = noisy.shape[:2]
         if self.train and self.crop:
             h = w = self.crop
