@@ -1,4 +1,4 @@
-"""End-to-end smoke test of train_vae.py, train_ldm.py, evaluate.py with tiny random models.
+"""End-to-end smoke test of train_vae.py, train_ldm.py, evaluate.py, sample_images.py with tiny random models.
 No downloads: loaders are patched, and evaluate's LPIPS-alex is swapped for LPIPS-vgg (VGG weights are cached, AlexNet is not).
 Run: uv run tests/test_smoke.py
 """
@@ -23,6 +23,7 @@ from diffusers import DDPMScheduler  # noqa: E402
 
 import darkdiff.data as data  # noqa: E402
 import evaluate  # noqa: E402
+import sample_images  # noqa: E402
 import train_ldm  # noqa: E402
 import train_vae  # noqa: E402
 from darkdiff.vae import ResidualVAE, VAELoss  # noqa: E402
@@ -53,7 +54,7 @@ def test_end_to_end():
         st.enter_context(mock.patch.object(lpips, "LPIPS", lambda net: real_lpips(net="vgg")))
         for mod in (train_ldm, evaluate):
             st.enter_context(mock.patch.object(mod, "load_backbone", fake_backbone))
-        for mod in (train_vae, train_ldm, evaluate):
+        for mod in (train_vae, train_ldm, evaluate, sample_images):
             st.enter_context(mock.patch.object(mod, "get_pairs", fake_pairs))
 
         vae_dir, ldm_dir, eval_dir = (os.path.join(tmp, d) for d in ("vae", "ldm", "eval"))
@@ -64,6 +65,18 @@ def test_end_to_end():
         ldm_ckpt = os.path.join(ldm_dir, "ldm_last.pt")
         evaluate.main(["--vae-ckpt", vae_ckpt, "--ckpt", ldm_ckpt, "--steps", "2", "--region-size", "4",
                        "--out", eval_dir, "--save-images"])
+
+        # samples from a vanilla and an --illum checkpoint: a wrong illum guess fails load_model's key check
+        illum_dir = os.path.join(tmp, "ldm_illum")
+        train_ldm.main(["--vae-ckpt", vae_ckpt, "--crop", "64", "--epochs", "1", "--workers", "0",
+                        "--region-size", "4", "--illum", "--out", illum_dir])
+        for ck, sub in ((ldm_ckpt, "s_vanilla"), (os.path.join(illum_dir, "ldm_last.pt"), "s_illum")):
+            sample_images.main(["--backbone", "sd21", "--ckpt", ck, "--vae-ckpt", vae_ckpt, "--steps", "2",
+                                "--region-size", "4", "-n", "1", "--out", os.path.join(tmp, sub)])
+            pngs = glob.glob(os.path.join(tmp, sub, "*.png"))
+            assert len(pngs) == 1, pngs
+            from PIL import Image
+            assert Image.open(pngs[0]).size == (3 * 64, 64), Image.open(pngs[0]).size  # noisy | output | gt
 
         assert os.path.exists(os.path.join(vae_dir, "vae_epoch1.pt")) and os.path.exists(vae_ckpt)
         assert os.path.exists(ldm_ckpt)

@@ -13,6 +13,7 @@ Unofficial implementation of *DarkDiff: Advancing Low-Light Raw Enhancement by R
 | `darkdiff/model.py` | Sec 4.2/4.4: context processor, region-based cross-attention, decoder image loss, CFG sampling (Eq 10) |
 | `train_vae.py` | Stage 1: noisy LRGB -> clean sRGB VAE fine-tune |
 | `train_ldm.py` | Stage 2: U-Net + context processor + region cross-attention, `L_LDM + lam * L_image` |
+| `sample_images.py` | Side-by-side noisy / output / ground-truth PNGs for N test images |
 | `evaluate.py` | DDIM 50 steps, PSNR / SSIM / LPIPS, full images |
 | `download_data.py` | SID / ELD / LRD download + extract |
 
@@ -67,6 +68,12 @@ All new layers are zero-initialised, so at the start of training the model is ex
 
 ```sh
 uv run sweep_backbones.py --epochs 20 --backbones sd21 mobilenetv3-unet compact-unet bk-sdm-v2-tiny
+```
+
+Visual check of a trained backbone: `noisy input | output | ground truth` PNGs for the first N test images, in `runs/samples/<backbone>_<dataset>`. `--ckpt` defaults to where the sweep saved that backbone. Illum or vanilla is read from the checkpoint.
+
+```sh
+uv run sample_images.py --backbone mobilenetv3-unet --dataset sid -n 8
 ```
 
 The first row of `summary.csv` is `how to read`: it says for every column whether higher or lower is better. `*_delta` columns are the row minus `sd21`.

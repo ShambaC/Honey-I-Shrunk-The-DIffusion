@@ -16,6 +16,19 @@ from darkdiff.model import SD_MODEL, DarkDiff
 from darkdiff.vae import ResidualVAE
 
 
+def load_model(backbone, state, vae_ckpt=None, illum=False, region_size=8, model_id=SD_MODEL):
+    """DarkDiff with the stage-2 `state` dict loaded; the frozen VAE comes from `vae_ckpt` or the pretrained SD VAE."""
+    unet, sched, embeds = load_backbone(backbone)
+    rvae = ResidualVAE.from_pretrained(model_id)
+    if vae_ckpt:
+        rvae.load_state_dict(torch.load(vae_ckpt, map_location="cpu", weights_only=True))
+    model = DarkDiff(unet, rvae, sched, embeds, region_size=region_size, illum=illum)
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    # strict=False only so the frozen rvae.* keys (not in the checkpoint) are allowed to be missing
+    assert not unexpected and not [k for k in missing if not k.startswith("rvae.")], (missing, unexpected)
+    return model
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Sample full test images with DarkDiff and report PSNR/SSIM/LPIPS.")
     p.add_argument("--data-root", default="data")
@@ -41,16 +54,8 @@ def main(argv=None):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    unet, sched, embeds = load_backbone(args.backbone)
-    rvae = ResidualVAE.from_pretrained(args.model_id)
-    if args.vae_ckpt:
-        rvae.load_state_dict(torch.load(args.vae_ckpt, map_location="cpu", weights_only=True))
-    model = DarkDiff(unet, rvae, sched, embeds, region_size=args.region_size, illum=args.illum)
-    missing, unexpected = model.load_state_dict(
-        torch.load(args.ckpt, map_location="cpu", weights_only=True), strict=False)
-    # strict=False only so the frozen rvae.* keys (not in the checkpoint) are allowed to be missing
-    assert not unexpected and not [k for k in missing if not k.startswith("rvae.")], (missing, unexpected)
-    model = model.to(dev).eval()
+    state = torch.load(args.ckpt, map_location="cpu", weights_only=True)
+    model = load_model(args.backbone, state, args.vae_ckpt, args.illum, args.region_size, args.model_id).to(dev).eval()
 
     lpips_fn = lpips.LPIPS(net="alex").to(dev).eval()
     dl = DataLoader(PairDataset(get_pairs(args.dataset, args.data_root, "test"), None, train=False), batch_size=1)
