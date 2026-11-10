@@ -19,6 +19,11 @@ PRETRAINED = {
 }
 SCRATCH = ("compact-unet", "mobilenetv3-unet")
 BACKBONES = (*PRETRAINED, *SCRATCH)
+BASELINE = "sd21"  # paper DarkDiff, run vanilla; every lightweight backbone runs with the illumination filters
+
+
+def variant(backbone):
+    return "vanilla" if backbone == BASELINE else "illum"
 CROSS_DIM = 1024  # SD2.1 OpenCLIP text width; the scratch U-Nets reuse SD2.1's empty-prompt embedding
 
 

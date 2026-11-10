@@ -48,7 +48,7 @@ uv run sweep_backbones.py --vae-ckpt runs/vae/vae_last.pt             # train + 
 uv run sweep_backbones.py                                             # same, pretrained SD VAE: skips stage 1, no residual path
 ```
 
-`sweep_backbones.py` writes `runs/backbones/summary.csv`, one row per backbone and variant: PSNR / SSIM / LPIPS for `sid` and `eld` (or `lrd`), the benchmark columns (`unet_params_M`, `ctx_params_M`, `trainable_params_M`, `unet_gflops`, `ctx_gflops`, `infer_s`, `infer_mem_GB`, `train_step_s`, `train_mem_GB`), and `pareto`. Rows are sorted by primary-dataset LPIPS. `pareto` is True when no other backbone has both lower-or-equal LPIPS and lower-or-equal `trainable_params_M`, with one strictly lower. `OOM` in the benchmark marks a run that does not fit the GPU.
+`sweep_backbones.py` writes `runs/backbones/summary.csv`, one row per backbone (variant `vanilla` for `sd21`, `illum` for the rest): PSNR / SSIM / LPIPS for `sid` and `eld` (or `lrd`), the benchmark columns (`unet_params_M`, `ctx_params_M`, `trainable_params_M`, `unet_gflops`, `ctx_gflops`, `infer_s`, `infer_mem_GB`, `train_step_s`, `train_mem_GB`), and `pareto`. Rows are sorted by primary-dataset LPIPS. `pareto` is True when no other backbone has both lower-or-equal LPIPS and lower-or-equal `trainable_params_M`, with one strictly lower. `OOM` in the benchmark marks a run that does not fit the GPU.
 
 ## Illumination-aware cross-attention
 
@@ -61,13 +61,15 @@ uv run sweep_backbones.py                                             # same, pr
 
 All new layers are zero-initialised, so at the start of training the model is exactly vanilla DarkDiff. For the 5% condition drop and the CFG unconditional branch, `L` is set to 1, which is neutral (`log L = 0`). A checkpoint trained with `--illum` must be evaluated with `--illum`.
 
-`darkdiff/illum.py` also has `CurveBrighten`, `LightContextEncoder` and `illum_adaptive_cfg`. They are not wired into the model yet (`uv run -m darkdiff.illum` runs their self-test).
+`darkdiff/illum.py` also has `CurveBrighten` (pixel-space curve before the VAE encoder), `LightContextEncoder` (small replacement for the context processor) and `illum_adaptive_cfg` (spatially varying guidance). They are not wired into the model yet (`uv run -m darkdiff.illum` runs their self-test).
 
-`sweep_backbones.py --variants vanilla illum` (the default) trains and evaluates both variants of every backbone. Vanilla runs go to `runs/backbones/<backbone>`, illum runs to `runs/backbones/<backbone>-illum`. `summary.csv` gets a `variant` column and `*_delta` columns (illum minus vanilla, same backbone):
+`sweep_backbones.py` compares paper DarkDiff with our modified DarkDiff. `sd21` runs vanilla. Every lightweight backbone runs with `--illum`. All runs use the same `--epochs`. `sd21` goes to `runs/backbones/sd21`, the others to `runs/backbones/<backbone>-illum`.
 
 ```sh
-uv run sweep_backbones.py --epochs 20 --backbones mobilenetv3-unet compact-unet bk-sdm-v2-tiny
+uv run sweep_backbones.py --epochs 20 --backbones sd21 mobilenetv3-unet compact-unet bk-sdm-v2-tiny
 ```
+
+The first row of `summary.csv` is `how to read`: it says for every column whether higher or lower is better. `*_delta` columns are the row minus `sd21`.
 
 Tests (tiny random models, no downloads): `uv run tests/test_isp.py`, `uv run tests/test_vae.py`, `uv run tests/test_model.py`, `uv run tests/test_backbones.py`, `uv run tests/test_benchmark.py`, `uv run tests/test_smoke.py`.
 
