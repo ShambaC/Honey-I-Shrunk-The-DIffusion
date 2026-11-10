@@ -15,7 +15,8 @@ from darkdiff.backbones import BACKBONES, load_backbone
 from darkdiff.model import SD_MODEL, DarkDiff
 from darkdiff.vae import ResidualVAE
 
-BENCH_COLS = ["backbone", "unet_params_M", "ctx_params_M", "trainable_params_M", "unet_gflops", "ctx_gflops",
+VARIANTS = ("vanilla", "illum")
+BENCH_COLS = ["backbone", "variant", "unet_params_M", "ctx_params_M", "trainable_params_M", "unet_gflops", "ctx_gflops",
               "infer_s", "infer_mem_GB", "train_step_s", "train_mem_GB"]
 
 
@@ -49,14 +50,15 @@ def measure(fn, warm):
         torch.cuda.empty_cache()
 
 
-def bench(name, args):
+def bench(name, variant, args):
     dev = "cuda"
     unet, sched, embeds = load_backbone(name, weights=False)
-    model = DarkDiff(unet, make_rvae(args.model_id), sched, embeds).to(dev)
+    model = DarkDiff(unet, make_rvae(args.model_id), sched, embeds, illum=variant == "illum").to(dev)
     groups = model.param_groups(2.5e-4, 5e-5)
     opt = torch.optim.Adam(groups)
     row = {
         "backbone": name,
+        "variant": variant,
         "unet_params_M": sum(p.numel() for p in model.unet.parameters()) / 1e6,
         "ctx_params_M": sum(p.numel() for p in model.ctx_net.parameters()) / 1e6,
         "trainable_params_M": sum(p.numel() for g in groups for p in g["params"]) / 1e6,
@@ -68,7 +70,8 @@ def bench(name, args):
         z = torch.randn(1, 4, s, s, device=dev)
         t = torch.full((1,), 500, device=dev, dtype=torch.long)
         ctx = model.context(z)
-        row["unet_gflops"] = gflops(lambda: model.denoise(z, t, ctx))
+        L = torch.rand(1, 1, s, s, device=dev) if model.illum else None
+        row["unet_gflops"] = gflops(lambda: model.denoise(z, t, ctx, L))
         row["ctx_gflops"] = gflops(lambda: model.context(z))
 
     noisy = torch.rand(1, 3, args.size, args.size, device=dev) * 2 - 1
@@ -114,6 +117,8 @@ def print_table(rows, cols):
 def main(argv=None):
     p = argparse.ArgumentParser(description="Per-backbone efficiency: params, GFLOPs, inference and train-step time and memory.")
     p.add_argument("--backbones", nargs="+", choices=BACKBONES, default=list(BACKBONES))
+    p.add_argument("--variants", nargs="+", choices=VARIANTS, default=list(VARIANTS),
+                   help="vanilla DarkDiff and/or the illumination-aware region cross-attention")
     p.add_argument("--model-id", default=SD_MODEL, help="SD VAE config source for ResidualVAE (random weights)")
     p.add_argument("--size", type=int, default=512, help="square inference image side")
     p.add_argument("--crop", type=int, default=512, help="train-step crop side")
@@ -125,8 +130,8 @@ def main(argv=None):
     torch.cuda.set_device(args.gpu)
 
     rows = []
-    for name in tqdm(args.backbones, desc="backbones"):
-        rows.append(bench(name, args))
+    for name, variant in tqdm([(b, v) for b in args.backbones for v in args.variants], desc="backbones"):
+        rows.append(bench(name, variant, args))
         gc.collect()
         torch.cuda.empty_cache()
     write_csv(args.out, rows, BENCH_COLS)

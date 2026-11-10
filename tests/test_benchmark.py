@@ -41,12 +41,13 @@ def fake_run(cmd, check=False):
         out.mkdir(parents=True, exist_ok=True)
         (out / "metrics.json").write_text(json.dumps(METRICS_JSON))
     elif cmd[2] == "benchmark_backbones.py":
-        bench.write_csv(cmd[cmd.index("--out") + 1], [bench_row("sd21", 1.0), bench_row("compact-unet", 1.0)],
+        bench.write_csv(cmd[cmd.index("--out") + 1],
+                        [bench_row(b, 1.0, variant=v) for b in ("sd21", "compact-unet") for v in bench.VARIANTS],
                         bench.BENCH_COLS)
 
 
-def bench_row(name, params, train_mem=1.0):
-    return {"backbone": name, "unet_params_M": params, "ctx_params_M": 1.0, "trainable_params_M": params,
+def bench_row(name, params, train_mem=1.0, variant="vanilla"):
+    return {"backbone": name, "variant": variant, "unet_params_M": params, "ctx_params_M": 1.0, "trainable_params_M": params,
             "unet_gflops": 1.0, "ctx_gflops": 1.0, "infer_s": 1.0, "infer_mem_GB": 1.0,
             "train_step_s": 1.0, "train_mem_GB": train_mem}
 
@@ -60,10 +61,14 @@ def test_benchmark_csv():
                     "--steps", "2", "--out", out])
         with open(out, newline="") as f:
             rows = list(csv.DictReader(f))
-    assert len(rows) == 2, rows
+    assert sorted((r["backbone"], r["variant"]) for r in rows) == [
+        ("compact-unet", "illum"), ("compact-unet", "vanilla"), ("mobilenetv3-unet", "illum"),
+        ("mobilenetv3-unet", "vanilla")], rows
+    by = {(r["backbone"], r["variant"]): r for r in rows}
+    assert float(by[("compact-unet", "illum")]["trainable_params_M"]) > float(by[("compact-unet", "vanilla")]["trainable_params_M"])
     for r in rows:
         assert set(r) == set(bench.BENCH_COLS), r.keys()
-        for c in bench.BENCH_COLS[1:]:
+        for c in bench.BENCH_COLS[2:]:
             assert math.isfinite(float(r[c])), (c, r[c])
 
 
@@ -88,6 +93,24 @@ def test_summarize_order_and_pareto():
         assert (out / "summary.csv").exists()
 
 
+def test_summarize_variant_deltas():
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        for name, lpips in (("A", 0.30), ("A-illum", 0.25)):
+            d = out / name / "eval_sid"
+            d.mkdir(parents=True)
+            (d / "metrics.json").write_text(json.dumps(
+                {"mean": {"psnr": 20.0, "ssim": 0.8, "lpips": lpips}, "per_image": []}))
+        # old benchmark.csv without a variant column counts as vanilla
+        old = [c for c in bench.BENCH_COLS if c != "variant"]
+        bench.write_csv(out / "benchmark.csv", [{k: v for k, v in bench_row("A", 5.0).items() if k in old}], old)
+        got = sweep.summarize(out, ["A"], ["sid"], ["vanilla", "illum"])
+        by = {r["variant"]: r for r in got}
+        assert [r["variant"] for r in got] == ["illum", "vanilla"], got
+        assert math.isclose(by["illum"]["sid_lpips_delta"], -0.05) and by["vanilla"]["sid_lpips_delta"] is None, by
+        assert by["vanilla"]["trainable_params_M"] == 5.0 and by["illum"]["trainable_params_M"] is None, by
+
+
 def test_sweep_commands_and_skips():
     CALLS.clear()
     with tempfile.TemporaryDirectory() as tmp:
@@ -97,15 +120,16 @@ def test_sweep_commands_and_skips():
             sweep.main(argv)
 
         trains = [c for c in CALLS if c[2] == "train_ldm.py"]
-        assert len(trains) == 2, trains
+        assert len(trains) == 4, trains
         for c in trains:
             b = c[c.index("--backbone") + 1]
+            assert ("--illum" in c) == c[c.index("--out") + 1].endswith(os.path.join(f"{b}-illum", "ldm")), c
             assert ("--lr-unet" in c) == (b in SCRATCH), c
             if b in SCRATCH:
                 assert c[c.index("--lr-unet") + 1] == "2.5e-4", c
-        evals = sorted((c[c.index("--backbone") + 1], c[c.index("--dataset") + 1])
+        evals = sorted((c[c.index("--backbone") + 1], "--illum" in c, c[c.index("--dataset") + 1])
                        for c in CALLS if c[2] == "evaluate.py")
-        assert evals == [("compact-unet", "eld"), ("compact-unet", "sid"), ("sd21", "eld"), ("sd21", "sid")], evals
+        assert evals == [(b, i, d) for b in ("compact-unet", "sd21") for i in (False, True) for d in ("eld", "sid")], evals
 
         CALLS.clear()
         with mock.patch.object(sweep.subprocess, "run", fake_run):

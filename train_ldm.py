@@ -26,6 +26,7 @@ def main(argv=None):
     p.add_argument("--lr-unet", type=float, default=5e-5)
     p.add_argument("--lam", type=float, default=1.0)
     p.add_argument("--region-size", type=int, default=8)
+    p.add_argument("--illum", action="store_true", help="illumination-aware region cross-attention (darkdiff/illum.py)")
     p.add_argument("--workers", type=int, default=4)
     p.add_argument("--out", default="runs/ldm")
     p.add_argument("--save-every", type=int, default=100)
@@ -42,7 +43,7 @@ def main(argv=None):
     rvae = ResidualVAE.from_pretrained(args.model_id)
     if args.vae_ckpt:
         rvae.load_state_dict(torch.load(args.vae_ckpt, map_location="cpu", weights_only=True))
-    model = DarkDiff(unet, rvae, sched, embeds, region_size=args.region_size)
+    model = DarkDiff(unet, rvae, sched, embeds, region_size=args.region_size, illum=args.illum)
     model = model.to(dev).train()
     opt = torch.optim.Adam(model.param_groups(args.lr_new, args.lr_unet))
 

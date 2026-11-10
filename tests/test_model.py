@@ -38,11 +38,11 @@ def tiny_rvae():
     return ResidualVAE(vae).to(DEV)
 
 
-def make(unet=None):
+def make(unet=None, illum=False):
     unet = unet or tiny_unet()
     sched = DDPMScheduler(prediction_type="v_prediction")
     pe = torch.randn(1, 77, 32, device=DEV)
-    return DarkDiff(unet, tiny_rvae(), sched, pe, region_size=8)
+    return DarkDiff(unet, tiny_rvae(), sched, pe, region_size=8, illum=illum)
 
 
 def nonzero_region_out(model, std=0.05):
@@ -132,6 +132,46 @@ def test_sample_shape_range():
     out = model.sample(noisy, steps=2, guidance=2.0)
     assert out.shape == (1, 3, 64, 64), out.shape
     assert out.min() >= -1 and out.max() <= 1
+
+
+def test_illum_zero_init_matches_vanilla():
+    unet = tiny_unet()
+    van = make(copy.deepcopy(unet)).eval()
+    nonzero_region_out(van)
+    ill = make(copy.deepcopy(unet), illum=True).eval()
+    missing, unexpected = ill.load_state_dict(van.state_dict(), strict=False)
+    ill.prompt_embeds = van.prompt_embeds  # non-persistent buffer, random per make()
+    assert not unexpected and missing and all(any(t in k for t in (".film.", ".gate.", "key_bias")) for k in missing), missing
+    z = torch.randn(2, 4, 20, 12, device=DEV)  # non-multiple grid exercises the padded keys
+    t = torch.tensor([3, 700], device=DEV)
+    L = torch.rand(2, 1, 20, 12, device=DEV)
+    with torch.no_grad():
+        ctx = van.context(z)
+        a = van.denoise(z, t, ctx)
+        b = ill.denoise(z, t, ctx, L)
+    assert torch.allclose(a, b, atol=1e-5), (a - b).abs().max()  # zero-init illum branch is an identity
+
+
+def test_illum_grads_and_sample():
+    model = make(illum=True).train()
+    nonzero_region_out(model)
+    noisy = torch.rand(2, 3, 64, 64, device=DEV) * 2 - 1
+    srgb = torch.rand(2, 3, 64, 64, device=DEV) * 2 - 1
+    loss, _ = model.training_loss(noisy, noisy, srgb)
+    loss.backward()
+    regs = list(model._regions.values())
+    assert any(r.film.net[-1].weight.grad.abs().sum() > 0 for r in regs), "film got no grads"
+    assert any(r.gate[-1].weight.grad.abs().sum() > 0 for r in regs), "gate got no grads"
+    assert any(r.key_bias.grad is not None and r.key_bias.grad.abs().sum() > 0 for r in regs), "key_bias got no grads"
+    ids = {id(p) for p in model.param_groups(2.5e-4, 5e-5)[0]["params"]}
+    assert all(id(r.key_bias) in ids and id(r.film.net[-1].weight) in ids for r in regs), "illum params not in lr_new group"
+
+    model.eval()
+    for r in regs:  # make the illum branch non-trivial so sampling exercises it
+        nn.init.normal_(r.gate[-1].weight, std=0.1)
+        nn.init.normal_(r.key_bias, std=0.5)
+    out = model.sample(noisy[:1], steps=2, guidance=2.0)
+    assert out.shape == (1, 3, 64, 64) and torch.isfinite(out).all()
 
 
 if __name__ == "__main__":

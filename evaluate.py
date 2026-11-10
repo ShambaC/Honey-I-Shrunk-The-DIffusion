@@ -24,10 +24,11 @@ def main(argv=None):
                    help="U-Net: must match the backbone the --ckpt was trained with")
     p.add_argument("--model-id", default=SD_MODEL, help="SD VAE source for ResidualVAE (shared by all backbones)")
     p.add_argument("--vae-ckpt", help="stage-1 VAE; omit to use the pretrained SD VAE (skips stay zero = no residual path)")
-    p.add_argument("--ckpt", required=True)
+    p.add_argument("--ckpt", required=True, help="stage-2 checkpoint; pass --illum if it was trained with --illum")
     p.add_argument("--steps", type=int, default=50)
     p.add_argument("--guidance", type=float, default=None)
     p.add_argument("--region-size", type=int, default=8)
+    p.add_argument("--illum", action="store_true", help="illumination-aware region cross-attention (darkdiff/illum.py)")
     p.add_argument("--out", default="runs/eval")
     p.add_argument("--save-images", action="store_true")
     p.add_argument("--gpu", type=int, default=0, help="CUDA device index on multi-GPU systems")
@@ -44,7 +45,7 @@ def main(argv=None):
     rvae = ResidualVAE.from_pretrained(args.model_id)
     if args.vae_ckpt:
         rvae.load_state_dict(torch.load(args.vae_ckpt, map_location="cpu", weights_only=True))
-    model = DarkDiff(unet, rvae, sched, embeds, region_size=args.region_size)
+    model = DarkDiff(unet, rvae, sched, embeds, region_size=args.region_size, illum=args.illum)
     missing, unexpected = model.load_state_dict(
         torch.load(args.ckpt, map_location="cpu", weights_only=True), strict=False)
     # strict=False only so the frozen rvae.* keys (not in the checkpoint) are allowed to be missing

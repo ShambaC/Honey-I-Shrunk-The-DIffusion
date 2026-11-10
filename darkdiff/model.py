@@ -10,6 +10,8 @@ from diffusers.models.attention_processor import Attention
 from diffusers.models.transformers.transformer_2d import Transformer2DModel
 from tqdm import tqdm
 
+from darkdiff.illum import EPS, IllumFiLM, estimate_illumination, illum_features
+
 SD_MODEL = "sd2-community/stable-diffusion-2-1"
 ENC = ("down_blocks", "mid_block")  # decoder (up_blocks) keeps its text cross-attention
 
@@ -36,7 +38,7 @@ def _capture(store, name):
 class RegionCrossAttention(nn.Module):
     """attn2 replacement: each r x r window attends only to the context tokens of the same window."""
 
-    def __init__(self, attn1, attn2, region_size):
+    def __init__(self, attn1, attn2, region_size, illum=False):
         super().__init__()
         C = attn1.to_q.in_features
         self.r = region_size
@@ -48,6 +50,16 @@ class RegionCrossAttention(nn.Module):
         nn.init.zeros_(self.attn.to_out[0].bias)
         self.cond = None  # (B, N, C) context tokens, set by DarkDiff.denoise
         self.hw = None  # (H, W) token grid, set by _set_grid
+        self.L = None  # (B, 1, h, w) illumination map in [0, 1], set by DarkDiff.denoise when illum=True
+        self.illum = illum
+        if illum:
+            # brightening filter from darkdiff/illum.py (IllumRegionCrossAttention), all zero-init => identity at start:
+            # FiLM on the condition before K/V, per-head key bias b_h * log(L), output gate g(L) in (0, 2)
+            self.film = IllumFiLM(C).to(attn1.to_q.weight)
+            self.key_bias = nn.Parameter(torch.zeros(attn2.heads, device=attn1.to_q.weight.device))
+            self.gate = nn.Sequential(nn.Conv2d(2, 32, 3, 1, 1), nn.SiLU(), nn.Conv2d(32, 1, 3, 1, 1)).to(attn1.to_q.weight)
+            nn.init.zeros_(self.gate[-1].weight)
+            nn.init.zeros_(self.gate[-1].bias)
 
     def forward(self, hidden_states, encoder_hidden_states=None, attention_mask=None, **kwargs):
         # Text encoder_hidden_states / mask are unused: the condition comes from self.cond.
@@ -57,9 +69,10 @@ class RegionCrossAttention(nn.Module):
         Kh, Kw = -(-H // r), -(-W // r)
         Hp, Wp = Kh * r, Kw * r
 
-        def windows(x):  # (B, N, C) -> (B*K, r*r, C), zero-padded to whole regions
-            x = F.pad(x.reshape(B, H, W, C), (0, 0, 0, Wp - W, 0, Hp - H))
-            return x.reshape(B, Kh, r, Kw, r, C).permute(0, 1, 3, 2, 4, 5).reshape(B * Kh * Kw, r * r, C)
+        def windows(x):  # (B, N, c) -> (B*K, r*r, c), zero-padded to whole regions
+            c = x.shape[-1]
+            x = F.pad(x.reshape(B, H, W, c), (0, 0, 0, Wp - W, 0, Hp - H))
+            return x.reshape(B, Kh, r, Kw, r, c).permute(0, 1, 3, 2, 4, 5).reshape(B * Kh * Kw, r * r, c)
 
         valid = torch.zeros(1, Hp, Wp, dtype=torch.bool, device=hidden_states.device)
         valid[:, :H, :W] = True  # padded key tokens get masked out
@@ -71,18 +84,31 @@ class RegionCrossAttention(nn.Module):
         def heads(t):
             return t.reshape(t.shape[0], -1, h, t.shape[-1] // h).transpose(1, 2)
 
+        cond = self.cond
+        if self.illum:
+            Lg = F.interpolate(self.L.to(cond.dtype), size=(H, W), mode="bilinear", align_corners=False)
+            grid = cond.transpose(1, 2).reshape(B, C, H, W)
+            cond = self.film(grid, Lg).flatten(2).transpose(1, 2)
+            logl = torch.log(windows(Lg.flatten(2).transpose(1, 2)) + EPS).reshape(B * Kh * Kw, 1, 1, r * r)
+            bias = self.key_bias.view(1, h, 1, 1).to(logl) * logl  # (B*K, h, 1, r*r)
+            mask = bias.masked_fill(~mask, float("-inf"))
+
         q = heads(a.to_q(windows(hidden_states)))
-        k = heads(a.to_k(windows(self.cond)))
-        v = heads(a.to_v(windows(self.cond)))
-        o = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+        k = heads(a.to_k(windows(cond)))
+        v = heads(a.to_v(windows(cond)))
+        o = F.scaled_dot_product_attention(q, k, v, attn_mask=mask.to(q.dtype) if mask.is_floating_point() else mask)
         o = a.to_out[0](o.transpose(1, 2).reshape(B * Kh * Kw, r * r, -1))
         o = o.reshape(B, Kh, Kw, r, r, C).permute(0, 1, 3, 2, 4, 5).reshape(B, Hp, Wp, C)
-        return o[:, :H, :W].reshape(B, N, C)  # no residual: BasicTransformerBlock adds it
+        o = o[:, :H, :W].reshape(B, N, C)
+        if self.illum:
+            o = o * (1 + torch.tanh(self.gate(illum_features(Lg)))).flatten(2).transpose(1, 2)
+        return o  # no residual: BasicTransformerBlock adds it
 
 
 class DarkDiff(nn.Module):
-    def __init__(self, unet, rvae, scheduler, prompt_embeds, region_size=8, cfg_drop=0.05):
+    def __init__(self, unet, rvae, scheduler, prompt_embeds, region_size=8, cfg_drop=0.05, illum=False):
         super().__init__()
+        self.illum = illum
         self.rvae = rvae.requires_grad_(False).eval()
         self.scheduler = scheduler
         self.cfg_drop = cfg_drop
@@ -101,7 +127,7 @@ class DarkDiff(nn.Module):
         self.unet = unet
         self._regions = {}
         for name, blk in _enc_sites(unet):
-            blk.attn2 = RegionCrossAttention(blk.attn1, blk.attn2, region_size)
+            blk.attn2 = RegionCrossAttention(blk.attn1, blk.attn2, region_size, illum)
             self._regions[name] = blk.attn2
         for n, m in unet.named_modules():
             if isinstance(m, Transformer2DModel) and n.split(".")[0] in ENC:
@@ -133,9 +159,16 @@ class DarkDiff(nn.Module):
             net.mid_block(x, emb, encoder_hidden_states=enc)
         return {n: self._cap.pop(n) for n in self._regions}
 
-    def denoise(self, z_t, t, ctx):
+    def illumination(self, noisy, z_y):
+        """(B, 1, h, w) illumination map of the gain-amplified LRGB at latent resolution, or None when illum=False."""
+        if not self.illum:
+            return None
+        return estimate_illumination((noisy.float() + 1) / 2, out_hw=z_y.shape[-2:])
+
+    def denoise(self, z_t, t, ctx, L=None):
         for name, reg in self._regions.items():
             reg.cond = ctx[name]
+            reg.L = L
         enc = self.prompt_embeds.expand(z_t.shape[0], -1, -1)
         return self.unet(z_t, t, encoder_hidden_states=enc).sample
 
@@ -163,11 +196,14 @@ class DarkDiff(nn.Module):
         B = z0.shape[0]
         drop = torch.rand(B, device=z0.device) < self.cfg_drop  # CFG: drop condition (paper A2)
         z_y = torch.where(drop.view(B, 1, 1, 1), torch.randn_like(z_y), z_y)
+        L = self.illumination(noisy, z_y)
+        if L is not None:  # dropped condition: L = 1 is neutral (log L = 0) and carries no input information
+            L = torch.where(drop.view(B, 1, 1, 1), torch.ones_like(L), L)
 
         noise = torch.randn_like(z0)
         t = torch.randint(0, self.scheduler.config.num_train_timesteps, (B,), device=z0.device)
         zt = self.scheduler.add_noise(z0, noise, t)
-        pred = self.denoise(zt, t, self.context(z_y))
+        pred = self.denoise(zt, t, self.context(z_y), L)
         ldm = F.mse_loss(pred, self._target(z0, noise, t))
 
         # One-step x0 estimate (paper Eq 8); gradients flow through the frozen decoder (Eq 9).
@@ -181,12 +217,15 @@ class DarkDiff(nn.Module):
         ctx_c = self.context(z_y)
         ctx_u = self.context(torch.randn_like(z_y))  # unconditional branch, as in CFG training
         ctx = {k: torch.cat([ctx_u[k], ctx_c[k]]) for k in ctx_c}
+        L = self.illumination(noisy, z_y)
+        if L is not None:
+            L = torch.cat([torch.ones_like(L), L])  # unconditional branch gets the neutral map, as in training
 
         sched = DDIMScheduler.from_config(self.scheduler.config)
         sched.set_timesteps(steps, device=z_y.device)
         z = torch.randn_like(z_y)
         for t in tqdm(sched.timesteps, desc="sample"):
-            eu, ec = self.denoise(torch.cat([z, z]), t, ctx).chunk(2)
+            eu, ec = self.denoise(torch.cat([z, z]), t, ctx, L).chunk(2)
             z = sched.step(eu + guidance * (ec - eu), t, z).prev_sample
         return self.rvae.decode(z / self.sf, feats).clamp(-1, 1)
 
