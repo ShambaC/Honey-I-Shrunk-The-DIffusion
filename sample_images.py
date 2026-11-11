@@ -23,7 +23,7 @@ def main(argv=None):
                                   "runs/backbones/<backbone>[-illum]/ldm/ldm_last.pt")
     p.add_argument("--dataset", default="sid", choices=["sid", "eld", "lrd"])
     p.add_argument("--data-root", default="data")
-    p.add_argument("-n", "--num", type=int, default=4, help="number of test images (the first N of the test list)")
+    p.add_argument("-n", "--num", type=int, default=4, help="number of test scenes (first N, one noisy shot per scene)")
     p.add_argument("--vae-ckpt", help="stage-1 VAE the checkpoint was trained with; omit for the pretrained SD VAE")
     p.add_argument("--model-id", default=SD_MODEL)
     p.add_argument("--steps", type=int, default=50)
@@ -48,8 +48,12 @@ def main(argv=None):
     model = load_model(args.backbone, state, args.vae_ckpt, illum, args.region_size, args.model_id).to(dev).eval()
     print(f"{args.backbone} ({'illum' if illum else 'vanilla'}) from {ckpt}")
 
-    ds = PairDataset(get_pairs(args.dataset, args.data_root, "test"), None, train=False)
-    dl = DataLoader(Subset(ds, range(min(args.num, len(ds)))), batch_size=1)
+    pairs = get_pairs(args.dataset, args.data_root, "test")
+    first = {}  # SID has several noisy shots per scene sharing one ground truth: keep one per ground truth
+    for i, (_, gt, _) in enumerate(pairs):
+        first.setdefault(gt, i)
+    ds = PairDataset(pairs, None, train=False)
+    dl = DataLoader(Subset(ds, list(first.values())[:args.num]), batch_size=1)
     amp = torch.autocast(dev, dtype=torch.bfloat16, enabled=dev == "cuda")
     for batch in tqdm(dl, desc="samples"):
         with amp:
