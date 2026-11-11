@@ -18,7 +18,7 @@ from diffusers import DDPMScheduler  # noqa: E402
 
 import benchmark_backbones as bench  # noqa: E402
 import sweep_backbones as sweep  # noqa: E402
-from darkdiff.backbones import SCRATCH, variant  # noqa: E402
+from darkdiff.backbones import variant  # noqa: E402
 from test_model import DEV, tiny_rvae, tiny_unet  # noqa: E402
 
 CALLS = []
@@ -42,7 +42,7 @@ def fake_run(cmd, check=False):
         (out / "metrics.json").write_text(json.dumps(METRICS_JSON))
     elif cmd[2] == "benchmark_backbones.py":
         bench.write_csv(cmd[cmd.index("--out") + 1],
-                        [bench_row(b, 1.0, variant=variant(b)) for b in ("sd21", "compact-unet")],
+                        [bench_row(b, 1.0, variant=variant(b)) for b in ("sd21", "bk-sdm-v2-tiny")],
                         bench.BENCH_COLS)
 
 
@@ -57,14 +57,14 @@ def test_benchmark_csv():
             mock.patch.object(bench, "load_backbone", fake_backbone), \
             mock.patch.object(bench, "make_rvae", lambda model_id: tiny_rvae()):
         out = os.path.join(tmp, "benchmark.csv")
-        bench.main(["--backbones", "sd21", "compact-unet", "--size", "64", "--crop", "64",
+        bench.main(["--backbones", "sd21", "bk-sdm-v2-tiny", "--size", "64", "--crop", "64",
                     "--steps", "2", "--out", out])
         with open(out, newline="") as f:
             rows = list(csv.DictReader(f))
     by = {r["backbone"]: r for r in rows}
-    assert [(r["backbone"], r["variant"]) for r in rows] == [("sd21", "vanilla"), ("compact-unet", "illum")], rows
+    assert [(r["backbone"], r["variant"]) for r in rows] == [("sd21", "vanilla"), ("bk-sdm-v2-tiny", "illum")], rows
     # same fake U-Net for both, so the difference is the illumination layers
-    assert float(by["compact-unet"]["trainable_params_M"]) > float(by["sd21"]["trainable_params_M"])
+    assert float(by["bk-sdm-v2-tiny"]["trainable_params_M"]) > float(by["sd21"]["trainable_params_M"])
     for r in rows:
         assert set(r) == set(bench.BENCH_COLS), r.keys()
         for c in bench.BENCH_COLS[2:]:
@@ -120,7 +120,7 @@ def test_summarize_baseline_deltas():
 def test_sweep_commands_and_skips():
     CALLS.clear()
     with tempfile.TemporaryDirectory() as tmp:
-        argv = ["--backbones", "sd21", "compact-unet", "--dataset", "sid", "--vae-ckpt", "runs/vae/vae_last.pt",
+        argv = ["--backbones", "sd21", "bk-sdm-v2-tiny", "--dataset", "sid", "--vae-ckpt", "runs/vae/vae_last.pt",
                 "--epochs", "7",
                 "--out", os.path.join(tmp, "runs")]
         with mock.patch.object(sweep.subprocess, "run", fake_run):
@@ -133,12 +133,10 @@ def test_sweep_commands_and_skips():
             assert ("--illum" in c) == (b != "sd21"), c
             assert c[c.index("--out") + 1] == str(sweep.run_dir(Path(tmp) / "runs", b) / "ldm"), c
             assert c[c.index("--epochs") + 1] == "7", c
-            assert ("--lr-unet" in c) == (b in SCRATCH), c
-            if b in SCRATCH:
-                assert c[c.index("--lr-unet") + 1] == "2.5e-4", c
+            assert "--lr-unet" not in c, c  # all backbones are pretrained: default fine-tuning lr
         evals = sorted((c[c.index("--backbone") + 1], "--illum" in c, c[c.index("--dataset") + 1])
                        for c in CALLS if c[2] == "evaluate.py")
-        assert evals == [("compact-unet", True, "eld"), ("compact-unet", True, "sid"),
+        assert evals == [("bk-sdm-v2-tiny", True, "eld"), ("bk-sdm-v2-tiny", True, "sid"),
                          ("sd21", False, "eld"), ("sd21", False, "sid")], evals
 
         CALLS.clear()

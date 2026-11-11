@@ -96,6 +96,15 @@ def test_region_locality():
     assert (o1[0, ~m] - o2[0, ~m]).abs().max() < 1e-5
 
 
+def test_region_init_from_cross_attn1():
+    # SDXS: attn1 is a text cross-attention (K/V from a wider text dim); only shape-matching weights are copied
+    C = 32
+    a1 = Attention(query_dim=C, cross_attention_dim=48, heads=8, dim_head=4).to(DEV)
+    rca = RegionCrossAttention(a1, Attention(query_dim=C, cross_attention_dim=48, heads=8, dim_head=4), 4).to(DEV)
+    assert rca.attn.to_k.weight.shape == (C, C)
+    assert torch.equal(rca.attn.to_q.weight, a1.to_q.weight)
+
+
 def test_non_multiple_grid():
     model = make().eval()
     nonzero_region_out(model)

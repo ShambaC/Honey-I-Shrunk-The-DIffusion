@@ -44,7 +44,10 @@ class RegionCrossAttention(nn.Module):
         self.r = region_size
         self.attn = Attention(query_dim=C, cross_attention_dim=C, heads=attn2.heads,
                               dim_head=attn2.to_q.out_features // attn2.heads).to(attn1.to_q.weight)
-        self.attn.load_state_dict(attn1.state_dict())  # init from self-attention
+        # init from self-attention. SDXS makes attn1 a text cross-attention (K/V from 1024-d text) in its highest-res
+        # blocks: those K/V shapes do not fit, so they keep the default init
+        own = self.attn.state_dict()
+        self.attn.load_state_dict({k: v for k, v in attn1.state_dict().items() if v.shape == own[k].shape}, strict=False)
         # Paper does not specify init. Zero output projection keeps the region branch silent at start.
         nn.init.zeros_(self.attn.to_out[0].weight)
         nn.init.zeros_(self.attn.to_out[0].bias)

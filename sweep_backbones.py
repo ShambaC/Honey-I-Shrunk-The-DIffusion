@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 from benchmark_backbones import BENCH_COLS, print_table, write_csv
-from darkdiff.backbones import BACKBONES, BASELINE, SCRATCH, variant
+from darkdiff.backbones import BACKBONES, BASELINE, variant
 
 METRICS = ("psnr", "ssim", "lpips")
 HIGHER_BETTER = ("psnr", "ssim")
@@ -131,8 +131,6 @@ def main(argv=None):
                    "--data-root", args.data_root, *vae, *illum, "--epochs", str(args.epochs),
                    "--crop", str(args.crop), "--batch-size", str(args.batch_size), "--out", str(run / "ldm"),
                    "--gpu", str(args.gpu)]
-            if b in SCRATCH:
-                cmd += ["--lr-unet", "2.5e-4"]  # random-init U-Nets need the higher lr; 5e-5 is for fine-tuning pretrained
             subprocess.run(cmd, check=True)
         if not ckpt.exists():
             print(f"no checkpoint for {b}, skipping eval")

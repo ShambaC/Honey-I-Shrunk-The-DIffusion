@@ -1,5 +1,5 @@
 """Save N side-by-side comparisons (noisy input | DarkDiff output | ground truth) from a trained checkpoint.
-Run: uv run sample_images.py --backbone mobilenetv3-unet --dataset sid -n 4"""
+Run: uv run sample_images.py --backbone bk-sdm-v2-tiny --dataset sid -n 4"""
 import argparse
 from pathlib import Path
 

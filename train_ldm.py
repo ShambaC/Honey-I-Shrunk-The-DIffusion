@@ -16,7 +16,7 @@ def main(argv=None):
     p.add_argument("--data-root", default="data")
     p.add_argument("--dataset", default="sid", choices=["sid", "lrd"])
     p.add_argument("--backbone", default="sd21", choices=BACKBONES,
-                   help="U-Net: pretrained SD distillation or scratch compact U-Net (see darkdiff/backbones.py)")
+                   help="pretrained U-Net: SD 2.1 or a distilled SD (see darkdiff/backbones.py)")
     p.add_argument("--model-id", default=SD_MODEL, help="SD VAE source for ResidualVAE (shared by all backbones)")
     p.add_argument("--vae-ckpt", help="stage-1 VAE; omit to use the pretrained SD VAE (skips stay zero = no residual path)")
     p.add_argument("--crop", type=int, default=1200)

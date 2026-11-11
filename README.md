@@ -39,8 +39,9 @@ uv run evaluate.py --dataset eld --vae-ckpt runs/vae/vae_last.pt --ckpt runs/ldm
 | `sd21` | `sd2-community/stable-diffusion-2-1` | Full SD 2.1 U-Net, the paper baseline |
 | `bk-sdm-v2-base`, `-small`, `-tiny` | `nota-ai/bk-sdm-v2-*` | Pretrained, distilled from SD 2.1-base, blocks removed |
 | `small-sd`, `tiny-sd` | `segmind/small-sd`, `segmind/tiny-sd` | Pretrained, distilled from SD 1.5 |
-| `compact-unet` | from scratch | SD 2.1 layout at half width, one layer per block |
-| `mobilenetv3-unet` | from scratch | `compact-unet` with MobileNetV3-style inverted residual blocks |
+| `sdxs-512` | `IDKiro/sdxs-512-0.9` | Pretrained, SD 2.1-base distilled for 1-step generation; same block layout as `bk-sdm-v2-tiny` |
+
+All backbones are pretrained in the SD VAE latent space, as DarkDiff requires. No pretrained compact (~150M) or MobileNet-style diffusion U-Net with public weights exists (SnapFusion, MobileDiffusion and SnapGen are unreleased), so the smallest backbones are the ~315-330M distilled ones.
 
 ```sh
 uv run train_vae.py --dataset sid --out runs/vae                     # stage 1, once; shared by all backbones
@@ -67,13 +68,13 @@ All new layers are zero-initialised, so at the start of training the model is ex
 `sweep_backbones.py` compares paper DarkDiff with our modified DarkDiff. `sd21` runs vanilla. Every lightweight backbone runs with `--illum`. All runs use the same `--epochs`. `sd21` goes to `runs/backbones/sd21`, the others to `runs/backbones/<backbone>-illum`.
 
 ```sh
-uv run sweep_backbones.py --epochs 20 --backbones sd21 mobilenetv3-unet compact-unet bk-sdm-v2-tiny
+uv run sweep_backbones.py --epochs 20 --backbones sd21 bk-sdm-v2-tiny tiny-sd sdxs-512
 ```
 
 Visual check of a trained backbone: `noisy input | output | ground truth` PNGs for the first N test images, in `runs/samples/<backbone>_<dataset>`. `--ckpt` defaults to where the sweep saved that backbone. Illum or vanilla is read from the checkpoint.
 
 ```sh
-uv run sample_images.py --backbone mobilenetv3-unet --dataset sid -n 8
+uv run sample_images.py --backbone bk-sdm-v2-tiny --dataset sid -n 8
 ```
 
 The first row of `summary.csv` is `how to read`: it says for every column whether higher or lower is better. `*_delta` columns are the row minus `sd21`.
