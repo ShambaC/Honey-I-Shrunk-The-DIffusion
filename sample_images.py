@@ -3,9 +3,10 @@ Run: uv run sample_images.py --backbone bk-sdm-v2-tiny --dataset sid -n 4"""
 import argparse
 from pathlib import Path
 
+import lpips
 import torch
 from torch.utils.data import DataLoader, Subset
-from torchmetrics.functional.image import peak_signal_noise_ratio
+from torchmetrics.functional.image import peak_signal_noise_ratio, structural_similarity_index_measure
 from torchvision.utils import save_image
 from tqdm import tqdm
 
@@ -55,6 +56,7 @@ def main(argv=None):
     ds = PairDataset(pairs, None, train=False)
     dl = DataLoader(Subset(ds, list(first.values())[:args.num]), batch_size=1)
     amp = torch.autocast(dev, dtype=torch.bfloat16, enabled=dev == "cuda")
+    lpips_fn = lpips.LPIPS(net="alex").to(dev).eval()  # same metrics as evaluate.py
     for batch in tqdm(dl, desc="samples"):
         with amp:
             pred = model.sample(batch["noisy"].to(dev), steps=args.steps, guidance=guidance)
@@ -64,7 +66,10 @@ def main(argv=None):
         noisy = ((batch["noisy"].to(dev) + 1) / 2).clamp(0, 1) ** (1 / 2.2)
         name = batch["name"][0]
         save_image(torch.cat([noisy, pred, gt], dim=3), out / f"{name}.png")
-        print(f"{name}: psnr={peak_signal_noise_ratio(pred, gt, data_range=1.0).item():.2f} dB")
+        with torch.no_grad():
+            lp = lpips_fn(pred * 2 - 1, gt * 2 - 1).mean().item()
+        print(f"{name}: psnr={peak_signal_noise_ratio(pred, gt, data_range=1.0).item():.2f} dB "
+              f"ssim={structural_similarity_index_measure(pred, gt, data_range=1.0).item():.4f} lpips={lp:.4f}")
     print(f"wrote {len(dl)} comparisons (noisy | output | ground truth) to {out}")
 
 
