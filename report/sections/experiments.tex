@@ -80,18 +80,20 @@ they agree with our visual ranking.
     \footnotesize (f) \sdxs{} + illum.
   \end{tabular}
   \caption{Outputs on one SID test scene after 10 epochs of training for every model. The input
-  is shown after the $\times300$ gain with gamma for display. The \sdtwo{} baseline has not yet
-  learned to denoise. The compact models recover the scene layout and the main objects, but with
-  colour casts and lost texture.}
+  is shown after the $\times300$ gain with gamma for display. The \sdtwo{} baseline keeps the
+  outlines of the chairs and table but replaces the content with a washed-out, streaked texture.
+  The compact models recover more of the objects, but with colour casts and lost texture.}
   \label{fig:samples}
 \end{figure*}
 
-Fig.~\ref{fig:samples} shows one test scene. The \sdtwo{} output is still dominated by noise.
-We attribute this to unstable optimisation: the baseline fine-tunes 1.22B parameters at batch
-size 1 without learning-rate warm-up or gradient clipping. The compact models, with a third of
-the trainable parameters, already recover the layout of the scene and its main objects (chairs,
-table, fruit, books). Their outputs are over-exposed and colour-shifted, and \sdxs{} shows
-streak-like texture artefacts.
+Fig.~\ref{fig:samples} shows one test scene. The \sdtwo{} output keeps the coarse layout (the
+outlines of the chairs and the table) but is washed out, nearly colourless and covered by a
+hallucinated, wood-grain-like texture; the fruit and books are lost. A likely cause is that the
+baseline fine-tunes 1.22B parameters at batch size 1 without learning-rate warm-up or gradient
+clipping, which makes optimisation slow and unstable. The compact models, with a third of the
+trainable parameters, recover more of the main objects (chairs, table, fruit, books). Their
+outputs are over-exposed and colour-shifted, and \sdxs{} shows the same streak-like artefacts as
+the baseline.
 
 \subsection{Efficiency}
 \label{sec:efficiency}
