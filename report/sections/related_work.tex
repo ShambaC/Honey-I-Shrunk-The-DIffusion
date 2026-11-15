@@ -1,0 +1,41 @@
+\section{Related Work}
+\label{sec:related}
+
+\textbf{Learned low-light raw enhancement.}
+SID~\cite{chen2018sid} introduced paired short- and long-exposure raw data and a U-Net that
+maps raw input straight to sRGB. ELD~\cite{wei2020eld} and LRD~\cite{zhang2023lrd} model the
+physics of sensor noise to synthesise realistic training data and narrow the gap between
+synthetic and real noise. These methods are regression models trained with pixel losses, so they
+average over plausible outputs and oversmooth at extremely low SNR.
+
+\textbf{Diffusion models for restoration.}
+Denoising diffusion probabilistic models~\cite{ho2020ddpm} learn to reverse a gradual noising
+process. DDIM~\cite{song2021ddim} samples in fewer, deterministic steps, and classifier-free
+guidance (CFG)~\cite{ho2022cfg} trades fidelity against detail at inference. Latent diffusion
+models~\cite{rombach2022ldm} run the process in the compressed latent space of a variational
+autoencoder (VAE), which is what Stable Diffusion does. For low-light raw images,
+ExposureDiffusion~\cite{wang2023exposurediffusion} trains a diffusion model from scratch on
+small paired sets, which limits its generative capacity. LDM-ISP~\cite{wen2023ldmisp} adapts a
+pretrained latent diffusion model with wavelet preprocessing and taming modules.
+DarkDiff~\cite{zheng2025darkdiff} retasks pretrained Stable Diffusion as the ISP with three
+additions: a residual VAE, region-based cross-attention to the noisy input, and a decoder image
+loss. It is the starting point of this work.
+
+\textbf{Efficient diffusion U-Nets.}
+BK-SDM~\cite{kim2024bksdm} removes whole residual and attention blocks from the Stable Diffusion
+U-Net and recovers quality by feature-level knowledge distillation from the full model.
+Segmind's Small-SD and Tiny-SD~\cite{segmind2023tinysd} apply the same idea to a fine-tuned
+SD~1.5. SDXS~\cite{song2024sdxs} distils a BK-SDM-style U-Net further, for one-step generation.
+SnapFusion~\cite{li2023snapfusion} and MobileDiffusion~\cite{zhao2024mobilediffusion} design
+efficient U-Nets for phones, but their weights are not public. Since DarkDiff relies on a
+pretrained prior, we restrict ourselves to compact U-Nets with public weights.
+
+\textbf{Illumination guidance.}
+Retinex theory treats an image as reflectance times illumination, and many enhancement methods
+estimate the illumination first. LIME~\cite{guo2017lime} refines an illumination map to brighten
+an image, and RetinexNet~\cite{wei2018retinexnet} learns the decomposition.
+Zero-DCE~\cite{guo2020zerodce} predicts pixel-wise brightening curves without paired data.
+Retinexformer~\cite{cai2023retinexformer} uses illumination features to guide self-attention in
+a transformer. We follow this line, but inject the illumination map into the cross-attention of
+a pretrained diffusion U-Net, using feature-wise linear modulation (FiLM)~\cite{perez2018film}
+and an attention bias.

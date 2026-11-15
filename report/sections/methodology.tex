@@ -1,0 +1,140 @@
+\section{Methodology}
+\label{sec:method}
+
+\begin{figure*}[t]
+  \centering
+  \input{figures/pipeline}
+  \caption{Overview of our model. The DarkDiff pipeline~\cite{zheng2025darkdiff} is kept, but the
+  \sdtwo{} U-Net is replaced by a distilled compact U-Net, and an illumination map of the input
+  (yellow) conditions every region cross-attention layer. Blue blocks are frozen; orange
+  blocks are trained.}
+  \label{fig:pipeline}
+\end{figure*}
+
+Fig.~\ref{fig:pipeline} shows the full model. We first describe our re-implementation of
+DarkDiff, then the two extensions.
+
+\subsection{DarkDiff Pipeline}
+\label{sec:darkdiff}
+
+\textbf{Input.}
+A minimal ISP packs the Bayer mosaic into four half-resolution planes, subtracts the black level,
+normalises by the white level, multiplies the short exposure by the exposure ratio, and applies
+white-balance gains. Averaging the two green planes gives a noisy linear RGB (LRGB) image $y$.
+The long-exposure reference goes through the same steps, then a colour-correction matrix from the
+camera metadata and the sRGB gamma curve, giving the target $x_{\mathrm{sRGB}}$.
+
+\textbf{Residual VAE.}
+The Stable Diffusion VAE downsamples by $8\times$, which loses fine detail. DarkDiff adds a
+convolution from each encoder stage $E_b$ to the matching decoder stage, so the decoder sees
+high-resolution features of the input. We initialise these skip convolutions at zero, so the VAE
+starts as the pretrained one. The VAE is frozen while the diffusion model trains.
+
+\textbf{Context processor and region cross-attention.}
+The condition latent is $z_y = \Enc(y)$. A copy of the U-Net encoder (the context processor)
+turns $z_y$ into features $c$ at every resolution. It runs at timestep 0, so it is computed once
+per image rather than once per denoising step. In the down and mid blocks of the U-Net, the text
+cross-attention is replaced by \emph{region} cross-attention. The token grid is split into
+$8\times 8$ windows, and the queries $Q_w$ of window $w$ attend only to the context tokens of the
+same window:
+\begin{equation}
+  \mathrm{RA}(Q_w, K_w, V_w) = \mathrm{softmax}\!\left(\frac{Q_w K_w^{\top}}{\sqrt{d}} + B\right) V_w ,
+  \label{eq:region}
+\end{equation}
+where $K_w$ and $V_w$ are projections of $c$, and $B=0$ in plain DarkDiff. A pixel of a
+processed image depends mostly on its neighbourhood, so this restriction keeps the output faithful
+to the input's structure and limits hallucination. The projections are copied from the block's
+self-attention, and the output projection starts at zero.
+
+\textbf{Training loss.}
+The U-Net $f_\theta$ predicts the noise $\epsilon$ or the velocity $v$~\cite{salimans2022progressive}
+from the noisy latent $z_t$. From its prediction we compute a one-step estimate $\hat z_0$ of the
+clean latent, decode it with the frozen residual decoder and compare it with the sRGB target:
+\begin{equation}
+  \mathcal{L} = \Lldm + \lambda\,\Limg, \qquad
+  \Limg = \big\| \Dec(\hat z_0, E_b) - x_{\mathrm{sRGB}} \big\|_2^2 ,
+  \label{eq:loss}
+\end{equation}
+with $\lambda = 1$. The image loss curbs colour shifts that the latent loss alone does not see.
+
+\textbf{Guidance.}
+During training, 5\% of the condition latents are replaced by Gaussian noise. At inference, the
+prediction is $\hat f = f_u + w\,(f_c - f_u)$, where $f_c$ uses the real condition and $f_u$ a
+noise condition. We use 50 DDIM steps and $w = 2.0$ for SID.
+
+\subsection{Compact Backbones}
+\label{sec:backbones}
+
+The context processor is a copy of the U-Net encoder, so a smaller U-Net shrinks both the
+denoiser and the context processor. The new U-Net must be \emph{pretrained} in the Stable
+Diffusion latent space, because DarkDiff's quality comes from the pretrained prior. In early
+tests, two compact U-Nets we trained from random initialisation (a half-width SD U-Net with
+150M parameters and a MobileNetV3-style~\cite{howard2019mobilenetv3} variant with 100M) gave
+unusable images after 10 epochs. We therefore use the three distilled U-Nets in
+Table~\ref{tab:backbones}, which are the smallest public SD-compatible U-Nets we found.
+
+\begin{table}[t]
+  \centering
+  \caption{Diffusion backbones. Sizes count U-Net parameters only.}
+  \label{tab:backbones}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{@{}llrc@{}}
+    \toprule
+    Backbone & Distilled from & U-Net & Pred. \\
+    \midrule
+    \sdtwo{} (baseline)            & ---                                & 866M & $v$ \\
+    \bksdm{}~\cite{kim2024bksdm}   & SD 2.1-base                        & 329M & $\epsilon$ \\
+    \tinysd{}~\cite{segmind2023tinysd} & Realistic Vision 4.0 (SD 1.5)  & 327M & $\epsilon$ \\
+    \sdxs{}~\cite{song2024sdxs}    & SD 2.1-base, via SD-Turbo          & 330M & $\epsilon$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+All three remove one residual and attention pair per stage, the mid block, and the deepest
+1280-channel resolution level. The remaining layers keep SD's widths, so they are initialised
+from the teacher before distillation. Most parameters live in the deep, low-resolution blocks,
+while most FLOPs come from the high-resolution blocks that are kept. Compute therefore drops less
+than size: 62\% fewer parameters, but only 39--47\% fewer FLOPs (Table~\ref{tab:efficiency}).
+\sdxs{} replaces the self-attention of its highest-resolution blocks by text cross-attention.
+There we copy only the projection weights whose shapes match.
+
+To make the larger models trainable on one 48\,GB GPU, we use gradient checkpointing in the
+VAE decoder. The backward pass of $\Limg$ through the full-resolution decoder dominated memory,
+and checkpointing cut its activation memory by about 58\%.
+
+\subsection{Illumination-Aware Conditioning}
+\label{sec:illum}
+
+Dark regions of the input have the lowest SNR, so the model should rely less on them and more
+on its prior. We give every region cross-attention layer an illumination map that tells it how
+bright each region of the input is.
+
+\textbf{Illumination map.}
+We compute the luminance $\ell = 0.2126R + 0.7152G + 0.0722B$ of the gain-amplified noisy LRGB,
+average-pool it to the latent grid, clamp it to $[0,1]$ and smooth it with a $3\times3$ filter:
+\begin{equation}
+  \illum = \mathrm{smooth}\big(\mathrm{clamp}(\mathrm{avgpool}(\ell), 0, 1)\big).
+\end{equation}
+Pooling over $8\times8$ pixels before clamping reduces the noise by about $8\times$, so clipping
+zero-mean noise does not bias the estimate upwards. The map is resized to each layer's token grid.
+We use the features
+$\phi(\illum) = \big[\illum,\ \log(\illum+\varepsilon)/\log(1/\varepsilon)\big]$ with
+$\varepsilon = 10^{-3}$. The log channel turns exposure ratios into differences.
+
+\textbf{Conditioning.}
+The map enters each region cross-attention layer in three places.
+\begin{enumerate}
+  \item \emph{FiLM on the condition}, before the key and value projections:
+        $c' = c \odot \big(1 + \gamma(\phiL)\big) + \beta(\phiL)$, where $\gamma$ and $\beta$
+        are two-layer convolutions.
+  \item \emph{Key bias}: in~\eqref{eq:region}, $B_{h,k} = b_h \log(\illum_k + \varepsilon)$ for
+        head $h$ and key $k$, with a learned scalar $b_h$. A head can learn to down-weight keys
+        from very dark, noisy tokens.
+  \item \emph{Output gate}: the attention output is multiplied by
+        $g = 1 + \tanh\big(G(\phiL)\big) \in (0, 2)$, so each region decides how much of the
+        condition to inject.
+\end{enumerate}
+The last layers of $\gamma$, $\beta$ and $G$, and every $b_h$, are initialised to zero. At the
+first step the model is therefore exactly DarkDiff. When the condition is replaced by noise
+(in training or in the unconditional CFG branch), we set $\illum = 1$, which is neutral because
+$\log \illum = 0$. The extension adds about 2M parameters and 2--3\% FLOPs.

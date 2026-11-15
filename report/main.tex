@@ -1,0 +1,49 @@
+% Course project report, AI61201 Visual Computing with AI/ML.
+% Build: latexmk   (settings in .latexmkrc; output goes to build/)
+\documentclass[conference]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,fit}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{figures/}}
+\input{macros}
+
+\begin{document}
+
+\title{Honey, I Shrunk the Diffusion: Compact, Illumination-Guided
+Diffusion for Low-Light Raw Image Enhancement}
+
+\author{%
+\IEEEauthorblockN{Ahon Bandyopadhyay}
+\IEEEauthorblockA{\textit{Indian Institute of Technology Kharagpur}\\
+Roll No.\ 25AI72P01\\
+ahon.bandyopadhyay25@kgpian.iitkgp.ac.in}
+\and
+\IEEEauthorblockN{Shamba Chowdhury}
+\IEEEauthorblockA{\textit{Indian Institute of Technology Kharagpur}\\
+Roll No.\ 25AI92F02\\
+shambac25@kgpian.iitkgp.ac.in}}
+
+\maketitle
+
+\input{sections/abstract}
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/methodology}
+\input{sections/experiments}
+\input{sections/conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{darkdiff_refs}
+
+\appendices
+\input{sections/appendix_contributions}
+
+\end{document}

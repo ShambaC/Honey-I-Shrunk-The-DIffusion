@@ -1,0 +1,38 @@
+\section{Introduction}
+\label{sec:intro}
+
+Images captured in low light suffer from poor visibility, strong sensor noise, colour distortion
+and loss of detail. A camera's image signal processor (ISP) turns the raw sensor data into an
+sRGB image through denoising, demosaicing, white balance, colour correction and tone mapping.
+When the photon count is very low, these steps fail: brightening the image also amplifies the
+noise, and denoisers remove texture together with noise.
+
+Learned ISPs map short-exposure raw images directly to long-exposure references. Early methods
+are regression networks trained with pixel losses~\cite{chen2018sid,wei2020eld}. They tend to
+oversmooth regions where the signal is very weak. Diffusion models~\cite{ho2020ddpm} can generate
+plausible detail instead of averaging it away. DarkDiff~\cite{zheng2025darkdiff} goes further: it
+retasks a \emph{pretrained} Stable Diffusion model~\cite{rombach2022ldm} as the ISP, so the
+strong natural-image prior of text-to-image pretraining is reused for restoration. It reports
+the best perceptual quality on the SID~\cite{chen2018sid}, ELD~\cite{wei2020eld} and
+LRD~\cite{zhang2023lrd} benchmarks.
+
+This quality has a cost. DarkDiff fine-tunes the full \sdtwo{} U-Net (866M parameters), plus a
+copy of its encoder used as a context processor, for 3000 epochs on eight A100 GPUs. Inference
+runs 50 denoising steps, each with two U-Net passes for classifier-free guidance. This puts the
+method out of reach of modest hardware.
+
+Our goal is a low-light enhancement model that keeps the benefits of a pretrained diffusion
+prior but runs on smaller GPUs. We make three contributions:
+\begin{enumerate}
+  \item We swap the \sdtwo{} U-Net for three distilled U-Nets that are pretrained in the same
+        latent space: \bksdm{}~\cite{kim2024bksdm}, \tinysd{}~\cite{segmind2023tinysd} and
+        \sdxs{}~\cite{song2024sdxs}. Each has about 330M parameters, 62\% fewer than \sdtwo{}.
+  \item We add \emph{illumination-aware conditioning}. A low-resolution illumination map of the
+        input modulates the condition features, biases the attention keys and gates the output of
+        every region cross-attention layer. It lets the model treat dark, low-SNR regions
+        differently from bright ones. All new layers start at zero, so the model starts as plain
+        DarkDiff.
+  \item We re-implement DarkDiff in PyTorch and compare the original model with our compact,
+        illumination-guided variants at an equal training budget. We report image quality
+        (PSNR, SSIM, LPIPS) and efficiency (parameters, FLOPs, time and memory).
+\end{enumerate}

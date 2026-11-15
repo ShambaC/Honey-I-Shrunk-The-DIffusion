@@ -1,0 +1,21 @@
+\begin{abstract}
+Photographs taken in very low light are dark, noisy and colour-shifted, and lose fine detail.
+DarkDiff, a recent method, restores them by retasking a pretrained Stable Diffusion~2.1 model as
+a camera image signal processor (ISP). It gives state-of-the-art perceptual quality, but it
+fine-tunes an 866M-parameter U-Net and needs large GPUs. We study two changes that target this
+cost. First, we replace the U-Net with one of three publicly available distilled U-Nets
+(\bksdm{}, \tinysd{} and \sdxs{}), each about 62\% smaller and still pretrained in the same
+latent space. Second, we add an illumination map of the input that conditions every region
+cross-attention layer through feature-wise modulation, a log-brightness key bias and an output
+gate. All new layers are zero-initialised, so training starts exactly from the original model.
+We re-implement DarkDiff in PyTorch and train every model for 10 epochs on the SID Sony dataset
+on one NVIDIA A40. At this budget, all three compact, illumination-guided models obtain better
+SSIM and LPIPS than the \sdtwo{} baseline (best LPIPS 0.776 against 0.879). They also cut
+trainable parameters by 66\%, inference memory by 55\%, inference time by up to 43\% and
+training memory by 61\%. The short schedule leaves all models far from the published accuracy,
+so our results compare backbones at equal budget rather than reproduce the paper.
+\end{abstract}
+
+\begin{IEEEkeywords}
+low-light enhancement, raw images, latent diffusion, knowledge distillation, illumination guidance
+\end{IEEEkeywords}

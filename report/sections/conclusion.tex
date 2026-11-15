@@ -1,0 +1,23 @@
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+We studied how to make DarkDiff, a diffusion-based camera ISP for low-light raw images, cheaper
+to train and run. We replaced its \sdtwo{} U-Net with three distilled, pretrained U-Nets of about
+330M parameters and added illumination-aware conditioning inside every region cross-attention
+layer. At an equal budget of 10 epochs on SID, all three compact, illumination-guided models
+obtained better SSIM and LPIPS than the original model. They also need a third of the trainable
+parameters, less than half the inference memory and 40\% less inference time. We also found that
+PSNR disagreed with the visual ranking at this early stage, while SSIM and LPIPS agreed with it.
+
+Future work:
+\begin{itemize}
+  \item Train to convergence, and evaluate on ELD and LRD.
+  \item Run ablations that add illumination conditioning to \sdtwo{} and remove it from the compact
+        backbones, to separate the two effects.
+  \item Use the sRGB latent as the diffusion target when no stage-1 VAE is available, and stabilise
+        the large baseline with gradient clipping and learning-rate warm-up.
+  \item Distil our own compact or MobileNet-style U-Nets from \sdtwo{}, so that backbones below
+        150M parameters can be used with a pretrained prior.
+  \item Reduce the number of sampling steps through distillation or faster samplers, and test on
+        more cameras and real-world captures.
+\end{itemize}

@@ -1,0 +1,36 @@
+% Method overview (Fig. 1). Included from sections/methodology.tex.
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[length=4pt]},
+    box/.style={draw, rounded corners=2pt, align=center, minimum height=8mm,
+                inner sep=3pt, fill=#1},
+    box/.default=white,
+    lbl/.style={font=\scriptsize, align=center},
+  ]
+  % Row 1: input, ISP, condition branch
+  \node[box=gray!10, text width=13mm] (raw) at (0,0) {Short-exp.\\raw};
+  \node[box=gray!10, text width=14mm, right=5mm of raw] (isp) {Minimal\\ISP};
+  \node[box=gray!10, text width=13mm, right=5mm of isp] (lrgb) {Noisy\\LRGB};
+  \node[box=blue!8, text width=15mm, right=6mm of lrgb] (enc) {VAE enc.\ $\Enc$\\(frozen)};
+  \node[box=orange!15, text width=19mm, right=9mm of enc] (ctx) {Context processor\\(U-Net enc.\ copy)};
+
+  % Row 2: illumination, denoiser, decoder, output
+  \node[box=yellow!25, text width=17mm, below=11mm of lrgb] (ill) {Illum.\ map $\illum$\\$\phi(\illum)=[\illum,\log \illum]$};
+  \node[box=orange!15, text width=26mm, below=11mm of ctx] (unet) {\textbf{Compact U-Net}\\region cross-attn\\+ FiLM, key bias, gate};
+  \node[box=blue!8, text width=17mm, right=9mm of unet] (dec) {Residual dec.\ $\Dec$\\(frozen)};
+  \node[box=gray!10, text width=11mm, right=5mm of dec] (out) {sRGB\\output};
+  \node[lbl, below=6mm of unet] (zt) {$z_T \sim \mathcal{N}(0, I)$, 50 DDIM steps, CFG};
+
+  \draw[->] (raw) -- (isp);
+  \draw[->] (isp) -- (lrgb);
+  \draw[->] (lrgb) -- (enc);
+  \draw[->] (enc) -- node[lbl, above] {$z_y$} (ctx);
+  \draw[->] (ctx) -- node[lbl, right] {context tokens} (unet);
+  \draw[->] (lrgb) -- node[lbl, left] {luminance,\\avg-pool} (ill);
+  \draw[->, thick, yellow!50!black] (ill) -- (unet);
+  \draw[->] (zt) -- (unet);
+  \draw[->] (unet) -- node[lbl, above] {$\hat z_0$} (dec);
+  \draw[->] (dec) -- (out);
+  % Encoder-to-decoder skip features of the residual VAE
+  \draw[->, dashed] (enc.north) -- ++(0,4mm) -| node[lbl, pos=0.25, above] {encoder skip features $E_b$} (dec.north);
+\end{tikzpicture}
