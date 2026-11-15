@@ -247,7 +247,8 @@ def empty_prompt_embeds(model_id=SD_MODEL):
     from transformers import CLIPTextModel, CLIPTokenizer
 
     tok = CLIPTokenizer.from_pretrained(model_id, subfolder="tokenizer")
-    enc = CLIPTextModel.from_pretrained(model_id, subfolder="text_encoder")
+    # fp32 explicitly: transformers 5 defaults to the saved dtype (fp16), which breaks fp32 inference without autocast
+    enc = CLIPTextModel.from_pretrained(model_id, subfolder="text_encoder", dtype=torch.float32)
     ids = tok([""], padding="max_length", max_length=tok.model_max_length, return_tensors="pt")
     out = enc(ids.input_ids).last_hidden_state
     del enc  # free the text encoder
