@@ -75,7 +75,11 @@ uv run sample_images.py --backbone bk-sdm-v2-tiny --dataset sid -n 8 \
 
 _`--ckpt` defaults to where the sweep saved that backbone. Illum or vanilla is read from the checkpoint keys._
 
-### 5. Compare backbones (server)
+### 5. Inference notebook (Kaggle)
+
+[Kaggle notebook](https://www.kaggle.com/code/shambac/sample-inference-histd)
+
+### 6. Compare backbones (server)
 
 ```sh
 uv run sweep_backbones.py --epochs 10 --backbones sd21 bk-sdm-v2-tiny tiny-sd sdxs-512 \
@@ -134,6 +138,25 @@ _`CurveBrighten`, `LightContextEncoder` and `illum_adaptive_cfg` also live in `d
 
 ---
 
+## 📄 Report
+
+_The project report is an IEEE-format LaTeX paper in [`report/`](report/)._
+
+| Path                                | Content                                                                                               |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `report/main.tex`                   | _Entry point_, loads `macros.tex` and the sections                                                    |
+| `report/sections/`                  | `abstract`, `introduction`, `related_work`, `methodology`, `experiments`, `conclusion`, `appendix_contributions` |
+| `report/figures/`                   | Pipeline diagram (`pipeline.tex`) and qualitative results: input, reference, `sd21`, `bk-sdm-v2-tiny`, `tiny-sd`, `sdxs-512` |
+| `report/darkdiff_refs.bib`          | Bibliography                                                                                          |
+| `report/build/`                     | _LaTeX build output, git-ignored_                                                                     |
+
+```sh
+cd report
+latexmk -pdf -outdir=build main.tex   # writes report/build/main.pdf
+```
+
+---
+
 ## 🗂️ Layout
 
 | File                     | Role                                                                                       |
@@ -152,6 +175,7 @@ _`CurveBrighten`, `LightContextEncoder` and `illum_adaptive_cfg` also live in `d
 | `sweep_backbones.py`     | Train + evaluate + benchmark every backbone, write `summary.csv`                           |
 | `download_data.py`       | SID / ELD / LRD download + extract                                                         |
 | `tests/`                 | Tiny-random-model tests, no downloads                                                      |
+| `report/`                | _LaTeX project report_, see [Report](#-report)                                             |
 
 ---
 
