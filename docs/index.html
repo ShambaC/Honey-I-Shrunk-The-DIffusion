@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Honey, I Shrunk the Diffusion</title>
+<meta name="description" content="Compact, illumination-guided diffusion for low-light raw image enhancement. AI61201 course project.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f3ee;
+    --card: #fbfaf7;
+    --line: #dfdddb;
+    --ink: #141a2e;
+    --muted: #5b6278;
+    --label: #96540a;
+    --accent: #f5a524;
+    --accent-soft: #fdf0d6;
+    --good: #2f6b3a;
+    --head: "Space Grotesk", system-ui, sans-serif;
+    --body: "Inter", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 var(--body);
+    border-top: 6px solid var(--accent);
+  }
+  img { max-width: 100%; display: block; }
+  a { color: var(--label); }
+
+  /* Each section is one "slide" */
+  .slide {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 64px 32px 40px;
+    border-bottom: 1px solid var(--line);
+  }
+  .slide:last-of-type { border-bottom: 0; }
+  .label {
+    font: 700 13px/1 var(--head);
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--label);
+    margin: 0 0 10px;
+  }
+  h1, h2, h3 { font-family: var(--head); margin: 0; letter-spacing: -.01em; }
+  h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.15; margin-bottom: 20px; }
+  h3 { font-size: 18px; margin-bottom: 6px; }
+  p { margin: 0 0 12px; }
+  .lead { font-size: 18px; color: var(--muted); max-width: 760px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 14px; }
+  .slide-foot {
+    display: flex; justify-content: space-between;
+    margin-top: 36px; font-size: 14px; color: var(--muted);
+  }
+
+  /* Title slide */
+  .title { min-height: 88vh; display: flex; flex-direction: column; justify-content: center; }
+  .title h1 { font-size: clamp(40px, 7vw, 76px); line-height: 1.02; margin: 12px 0 18px; }
+  .title .lead { font-size: clamp(18px, 2.2vw, 22px); }
+  .team { display: flex; flex-wrap: wrap; gap: 32px; margin-top: 40px; }
+  .team div { font-family: var(--head); font-weight: 600; font-size: 18px; }
+  .team span { display: block; font: 400 14px var(--body); color: var(--muted); }
+  .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+  .btn {
+    display: inline-block; padding: 10px 18px; border-radius: 6px;
+    font: 600 15px var(--head); text-decoration: none;
+    border: 1.5px solid var(--ink); color: var(--ink);
+  }
+  .btn.primary { background: var(--ink); color: var(--bg); }
+  .btn:hover { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+  .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  /* Cards in a grid */
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 18px 18px 14px;
+  }
+  .card p { color: var(--muted); font-size: 15px; margin: 0; }
+  .card.accent { border-top: 4px solid var(--accent); }
+  .kicker { font: 700 12px var(--head); letter-spacing: .14em; text-transform: uppercase; color: var(--label); margin-bottom: 6px; }
+  .big { font: 700 44px/1 var(--head); margin: 6px 0 4px; }
+
+  .callout {
+    margin-top: 20px; padding: 14px 18px; border-left: 4px solid var(--accent);
+    background: var(--accent-soft); border-radius: 0 6px 6px 0;
+  }
+  .callout b { font-family: var(--head); letter-spacing: .14em; text-transform: uppercase; font-size: 13px; color: var(--label); margin-right: 10px; }
+  .eq { font-family: "Cambria Math", "Latin Modern Math", Georgia, serif; font-size: 17px; white-space: nowrap; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font: 700 12px var(--head); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); background: #eeece6; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .best { font-weight: 700; color: var(--good); }
+  tr.ref td { color: var(--muted); font-style: italic; }
+
+  /* Pipeline diagram */
+  .flow { display: flex; align-items: stretch; gap: 6px; margin: 8px 0 10px; }
+  .node {
+    flex: 1 1 0; min-width: 0; padding: 12px 8px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--card); font-size: 14px; text-align: center;
+  }
+  .node b { display: block; font-family: var(--head); font-size: 15px; }
+  .node.frozen { background: #e8edf8; }
+  .node.trained { background: #fbe6c8; }
+  .node.illum { background: #fbf2b8; }
+  .arrow { align-self: center; color: var(--muted); font-size: 20px; }
+  .side { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; font-size: 14px; color: var(--muted); }
+  .side .node { flex: 0 0 auto; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--muted); }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--line); }
+
+  /* Image comparison */
+  figure { margin: 0; }
+  .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .shots figcaption { font-size: 14px; margin-top: 8px; }
+  .shots figcaption b { font: 700 11px var(--head); letter-spacing: .16em; text-transform: uppercase; color: var(--label); margin-right: 6px; }
+  .shots img { border-radius: 6px; border: 1px solid var(--line); aspect-ratio: 3 / 2; object-fit: cover; width: 100%; height: auto; }
+
+  ul.ticks { margin: 0; padding-left: 20px; }
+  ul.ticks li { margin-bottom: 8px; }
+  ol.refs { padding-left: 22px; font-size: 14px; color: var(--muted); columns: 2; column-gap: 32px; }
+  ol.refs li { margin-bottom: 8px; break-inside: avoid; }
+
+  footer { text-align: center; padding: 32px 16px 48px; color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 860px) {
+    .g3, .g4 { grid-template-columns: repeat(2, 1fr); }
+    .flow { flex-direction: column; }
+    .arrow { transform: rotate(90deg); }
+    .shots { grid-template-columns: repeat(2, 1fr); }
+    ol.refs { columns: 1; }
+  }
+  @media (max-width: 560px) {
+    .slide { padding: 48px 16px 32px; }
+    .g2, .g3, .g4 { grid-template-columns: 1fr; }
+    .shots { grid-template-columns: 1fr; }
+    .side { flex-direction: column; align-items: stretch; }
+    .title { min-height: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header class="slide title" id="top">
+  <p class="label">AI61201 · Course Project · Visual Computing with AI/ML</p>
+  <h1>Honey, I Shrunk<br>the Diffusion</h1>
+  <p class="lead">Compact diffusion with illumination guidance for low-light raw image enhancement.</p>
+  <div class="team">
+    <div>Ahon Bandyopadhyay<span>25AI72P01 · IIT Kharagpur</span></div>
+    <div>Shamba Chowdhury<span>25AI92F02 · IIT Kharagpur</span></div>
+  </div>
+  <div class="links">
+    <a class="btn primary" href="https://github.com/ShambaC/Honey-I-Shrunk-The-DIffusion">Code on GitHub</a>
+    <a class="btn" href="https://arxiv.org/abs/2505.23743">DarkDiff paper</a>
+    <a class="btn" href="#results">Jump to results</a>
+  </div>
+</header>
+
+<main>
+
+<section class="slide" id="problem">
+  <p class="label">01 · Problem statement</p>
+  <h2>Recovering clear images from the dark</h2>
+  <p class="lead">Low-light photos lose visibility, pick up noise, shift in colour and drop fine detail.
+  Diffusion models restore them best, but need large backbones and expensive GPUs.</p>
+  <div class="grid g4" style="margin-top:24px">
+    <div class="card accent"><h3>Poor visibility</h3><p>Underexposed regions carry almost no usable signal.</p></div>
+    <div class="card accent"><h3>Heavy noise</h3><p>Brightening a dark image amplifies sensor noise too.</p></div>
+    <div class="card accent"><h3>Colour distortion</h3><p>Low photon counts skew hue and white balance.</p></div>
+    <div class="card accent"><h3>Lost detail</h3><p>Edges, corners and textures fade or get oversmoothed.</p></div>
+  </div>
+  <div class="callout"><b>Goal</b>Enhance low-light images with a compact, illumination-guided diffusion model that runs on modest hardware.</div>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>01</span></div>
+</section>
+
+<section class="slide" id="existing">
+  <p class="label">02 · Existing work</p>
+  <h2>From regression to retasked diffusion</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Method</th><th>Approach</th><th>Limitation</th></tr></thead>
+      <tbody>
+        <tr><td><b>SID</b></td><td>Regression U-Net mapping raw to sRGB on paired data</td><td>Oversmooths where the signal is very low</td></tr>
+        <tr><td><b>ELD · LRD</b></td><td>Realistic noise models to narrow the synthetic–real gap</td><td>Still regression; struggles at extreme low SNR</td></tr>
+        <tr><td><b>ExposureDiffusion</b></td><td>Diffusion model trained from scratch on small paired sets</td><td>Limited generative capacity; misses detail and colour</td></tr>
+        <tr><td><b>LDM-ISP</b></td><td>Latent diffusion with DWT preprocessing and taming modules</td><td>Relies on a heavy pretrained backbone</td></tr>
+        <tr><td><b>DarkDiff (2025)</b></td><td>Retasks pretrained Stable Diffusion as a camera ISP — <em>our base</em></td><td>Best LPIPS, but inherits Stable Diffusion's size and cost</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>02</span></div>
+</section>
+
+<section class="slide" id="data">
+  <p class="label">03 · Datasets &amp; data preparation</p>
+  <h2>Paired low-light benchmarks</h2>
+  <p class="lead">Each short-exposure raw image is paired with a long-exposure capture of the same scene, which serves as the ground truth.</p>
+  <div class="grid g3" style="margin:24px 0 16px">
+    <div class="card accent"><div class="kicker">SID · See-in-the-Dark</div><p>Sony α7S II raw images. Its 1865 training pairs train the model; the 236 ×300 test pairs evaluate it.</p></div>
+    <div class="card accent"><div class="kicker">ELD · Extreme Low-light</div><p>Evaluation-only benchmark that tests how the SID-trained model generalises.</p></div>
+    <div class="card accent"><div class="kicker">LRD · Low-light Raw</div><p>Recent benchmark with its own training set of 1,440 pairs.</p></div>
+  </div>
+  <div class="grid g3">
+    <div class="card"><h3>Classic ISP first</h3><p>Black level, exposure gain and white balance run before the network, so it only learns denoising and the mapping to sRGB.</p></div>
+    <div class="card"><h3>Well-behaved noise</h3><p>Gain amplifies noise evenly and keeps it zero-mean, which is easier for the model to remove.</p></div>
+    <div class="card"><h3>Ground truth</h3><p>Long-exposure references rendered to sRGB with the same ISP code, plus colour correction and gamma.</p></div>
+  </div>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>03</span></div>
+</section>
+
+<section class="slide" id="darkdiff">
+  <p class="label">04 · Methodology 1/3</p>
+  <h2>Starting point: the DarkDiff pipeline</h2>
+  <div class="flow" role="img" aria-label="Pipeline: short-exposure raw, minimal ISP, noisy linear RGB, frozen VAE encoder, context processor, compact U-Net with region cross-attention and illumination conditioning, frozen residual decoder, sRGB output">
+    <div class="node"><b>Raw</b>short exposure</div><span class="arrow" aria-hidden="true">→</span>
+    <div class="node"><b>Minimal ISP</b>gain, white balance</div><span class="arrow" aria-hidden="true">→</span>
+    <div class="node frozen"><b>VAE encoder</b>condition latent</div><span class="arrow" aria-hidden="true">→</span>
+    <div class="node trained"><b>Context processor</b>U-Net encoder copy</div><span class="arrow" aria-hidden="true">→</span>
+    <div class="node trained"><b>Compact U-Net</b>region cross-attn, 50 DDIM steps</div><span class="arrow" aria-hidden="true">→</span>
+    <div class="node frozen"><b>Residual decoder</b>with encoder skips</div><span class="arrow" aria-hidden="true">→</span>
+    <div class="node"><b>sRGB</b>output</div>
+  </div>
+  <div class="side">
+    <div class="node illum"><b>Illumination map L</b>from the noisy input</div>
+    <span>feeds every region cross-attention layer of the compact U-Net (our addition, next slide)</span>
+  </div>
+  <div class="legend"><span><i style="background:#e8edf8"></i>Frozen</span><span><i style="background:#fbe6c8"></i>Trained</span><span><i style="background:#fbf2b8"></i>Illumination path</span></div>
+  <div class="grid g2" style="margin-top:20px">
+    <div class="card"><h3>Region-based cross-attention</h3><p>Queries attend only to condition tokens in the same 8×8 window, which keeps the noisy input's structure and avoids hallucinations.</p></div>
+    <div class="card"><h3>Residual VAE</h3><p>Encoder–decoder skip connections preserve fine content such as text and faces.</p></div>
+    <div class="card"><h3>Decoder reconstruction loss</h3><p>A one-step estimate of the clean latent is decoded and supervised in pixel space to curb colour shift.</p></div>
+    <div class="card"><h3>Classifier-free guidance</h3><p>The guidance weight (2.0 on SID) trades smoothness against generated detail at inference.</p></div>
+  </div>
+  <div class="callout"><span class="eq">𝓛 = 𝓛<sub>LDM</sub> + λ · 𝓛<sub>image</sub></span> &nbsp;·&nbsp; <b>Bottleneck</b>a full Stable Diffusion 2.1 U-Net. This is what we shrink.</div>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>04</span></div>
+</section>
+
+<section class="slide" id="illum">
+  <p class="label">05 · Methodology 2/3 · Ahon</p>
+  <h2>Illumination-guided conditioning</h2>
+  <div class="grid g3">
+    <div class="card accent"><h3>What the map encodes</h3><p>Luminance of the gain-amplified input, averaged per 8×8 latent cell to cut noise about 8×, then clamped and smoothed.</p></div>
+    <div class="card accent"><h3>How it guides</h3><p>Inside every region cross-attention layer it scales the condition features (FiLM), biases attention keys by log-brightness and gates each output.</p></div>
+    <div class="card accent"><h3>Why it helps</h3><p>Dark, noisy regions lean on the prior. Every new layer is zero-initialised, so training starts as plain DarkDiff.</p></div>
+  </div>
+  <div class="table-wrap" style="margin-top:20px">
+    <table>
+      <thead><tr><th>Component</th><th>Formula</th></tr></thead>
+      <tbody>
+        <tr><td>Features</td><td class="eq">φ(L) = [ L, log(L + ε) / log(1/ε) ]</td></tr>
+        <tr><td>FiLM on condition</td><td class="eq">c′ = c ⊙ (1 + γ(φ(L))) + β(φ(L))</td></tr>
+        <tr><td>Per-head key bias</td><td class="eq">B<sub>h,k</sub> = b<sub>h</sub> · log(L<sub>k</sub> + ε)</td></tr>
+        <tr><td>Output gate</td><td class="eq">g = 1 + tanh(G(φ(L))) ∈ (0, 2)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small" style="margin-top:12px">The unconditional CFG branch uses L = 1, which is neutral because log L = 0. Cost: about +2M parameters and +2–3% FLOPs.</p>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>05</span></div>
+</section>
+
+<section class="slide" id="backbones">
+  <p class="label">06 · Methodology 3/3 · Shamba</p>
+  <h2>Shrinking the denoiser</h2>
+  <p class="lead">DarkDiff needs a pretrained prior, so every replacement U-Net must be pretrained in the same latent space. We use the smallest public distilled U-Nets.</p>
+  <div class="grid g3" style="margin-top:24px">
+    <div class="card accent"><div class="kicker">Backbone A</div><h3>BK-SDM-v2-tiny</h3><div class="big">329M</div><p>U-Net parameters, −62% vs SD 2.1<br>Distilled from SD 2.1-base</p></div>
+    <div class="card accent"><div class="kicker">Backbone B</div><h3>Tiny-SD</h3><div class="big">327M</div><p>U-Net parameters, −62% vs SD 2.1<br>Distilled from Realistic Vision 4.0 (SD 1.5)</p></div>
+    <div class="card accent"><div class="kicker">Backbone C</div><h3>SDXS-512</h3><div class="big">330M</div><p>U-Net parameters, −62% vs SD 2.1<br>Distilled from SD 2.1-base, via SD-Turbo</p></div>
+  </div>
+  <div class="callout"><b>Baseline</b>SD 2.1 · 866M U-Net parameters (the original DarkDiff, without illumination conditioning)</div>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>06</span></div>
+</section>
+
+<section class="slide" id="setup">
+  <p class="label">07 · Experimental setup</p>
+  <h2>What we ran versus the paper</h2>
+  <div class="grid g2">
+    <div class="card"><div class="kicker">DarkDiff paper · full replication</div>
+      <ul class="ticks">
+        <li>Training data: SID and LRD</li>
+        <li>Evaluation: SID, ELD and LRD</li>
+        <li>Schedule: 3000 epochs on 8× A100</li>
+        <li>Backbone: SD 2.1 only</li>
+      </ul></div>
+    <div class="card accent"><div class="kicker">Our runs · reduced replication</div>
+      <ul class="ticks">
+        <li>Training data: SID</li>
+        <li>Evaluation: SID ×300 test set</li>
+        <li>Schedule: 10 epochs per backbone</li>
+        <li>Backbones: SD 2.1 plus three distilled U-Nets</li>
+        <li>Hardware: a single NVIDIA A40</li>
+      </ul></div>
+  </div>
+  <div class="callout"><b>Why</b>Limited GPU access and project time. Our scores compare the four backbones with each other, not with the paper.</div>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>07</span></div>
+</section>
+
+<section class="slide" id="results">
+  <p class="label">08 · Results 1/3</p>
+  <h2>Image quality after 10 epochs on SID</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Model</th><th>Initial weights</th><th class="num">PSNR ↑</th><th class="num">SSIM ↑</th><th class="num">LPIPS ↓</th></tr></thead>
+      <tbody>
+        <tr><td><b>SD 2.1</b> (DarkDiff baseline)</td><td>Pretrained</td><td class="num best">8.36 dB</td><td class="num">0.253</td><td class="num">0.879</td></tr>
+        <tr><td><b>BK-SDM-v2-tiny</b> + illum.</td><td>Pretrained, distilled</td><td class="num">7.42 dB</td><td class="num best">0.307</td><td class="num">0.813</td></tr>
+        <tr><td><b>SDXS-512</b> + illum.</td><td>Pretrained, distilled</td><td class="num">6.55 dB</td><td class="num">0.286</td><td class="num">0.800</td></tr>
+        <tr><td><b>Tiny-SD</b> + illum.</td><td>Pretrained, distilled</td><td class="num">4.36 dB</td><td class="num">0.296</td><td class="num best">0.776</td></tr>
+        <tr class="ref"><td>DarkDiff paper, full 3000-epoch run</td><td>Pretrained</td><td class="num">26.78 dB</td><td class="num">0.644</td><td class="num">0.186</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small" style="margin-top:12px">All three compact, illumination-guided models beat the baseline on SSIM and LPIPS. PSNR ranks them the other way: at this early stage it is dominated by global brightness and colour errors.</p>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>08</span></div>
+</section>
+
+<section class="slide" id="samples">
+  <p class="label">09 · Results 2/3</p>
+  <h2>Sample outputs on one SID scene</h2>
+  <div class="shots">
+    <figure><img src="figures/input.jpg" alt="Short-exposure input of a meeting room after gain: dark, noisy and purple-tinted" loading="lazy" width="900" height="602"><figcaption><b>Input</b>Short exposure</figcaption></figure>
+    <figure><img src="figures/sd21.jpg" alt="SD 2.1 output: washed-out grey with streaky, wood-grain-like texture; chairs and table outlines visible" loading="lazy" width="900" height="602"><figcaption><b>Baseline</b>SD 2.1</figcaption></figure>
+    <figure><img src="figures/bksdm_tiny.jpg" alt="BK-SDM-v2-tiny output: scene recognisable but over-exposed with a strong yellow cast" loading="lazy" width="900" height="602"><figcaption><b>Distilled</b>BK-SDM-v2-tiny</figcaption></figure>
+    <figure><img src="figures/reference.jpg" alt="Long-exposure reference: meeting room table with an apple, a lemon, markers and books" loading="lazy" width="900" height="602"><figcaption><b>Reference</b>Long exposure</figcaption></figure>
+    <figure><img src="figures/tiny_sd.jpg" alt="Tiny-SD output: very bright, faded scene with pale orange and blue casts" loading="lazy" width="900" height="602"><figcaption><b>Distilled</b>Tiny-SD</figcaption></figure>
+    <figure><img src="figures/sdxs512.jpg" alt="SDXS-512 output: grey scene with streaky texture artefacts, objects partly visible" loading="lazy" width="900" height="602"><figcaption><b>Distilled</b>SDXS-512</figcaption></figure>
+  </div>
+  <p class="muted small" style="margin-top:14px">Same SID test scene for every model, 10 epochs of training each.</p>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>09</span></div>
+</section>
+
+<section class="slide" id="efficiency">
+  <p class="label">10 · Results 3/3</p>
+  <h2>Efficiency: what shrinking buys</h2>
+  <div class="grid g4" style="margin-bottom:20px">
+    <div class="card accent"><div class="kicker">Trainable params</div><div class="big">−66%</div><p>1,218M → 413–419M</p></div>
+    <div class="card accent"><div class="kicker">Inference memory</div><div class="big">−55%</div><p>8.2 GB → 3.6–3.7 GB</p></div>
+    <div class="card accent"><div class="kicker">Inference time</div><div class="big">−43%</div><p>2.28 s → 1.31 s (SDXS-512)</p></div>
+    <div class="card accent"><div class="kicker">Training memory</div><div class="big">−61%</div><p>21.2 GB → 8.2 GB</p></div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Metric</th><th class="num">SD 2.1</th><th class="num">BK-SDM-v2-tiny</th><th class="num">Tiny-SD</th><th class="num">SDXS-512</th></tr></thead>
+      <tbody>
+        <tr><td>Trainable parameters</td><td class="num">1,218M</td><td class="num">417M</td><td class="num best">413M</td><td class="num">419M</td></tr>
+        <tr><td>U-Net compute</td><td class="num">813 GFLOPs</td><td class="num">496 GFLOPs</td><td class="num">495 GFLOPs</td><td class="num best">428 GFLOPs</td></tr>
+        <tr><td>Inference time</td><td class="num">2.28 s</td><td class="num">1.37 s</td><td class="num">1.45 s</td><td class="num best">1.31 s</td></tr>
+        <tr><td>Inference memory</td><td class="num">8.2 GB</td><td class="num">3.7 GB</td><td class="num best">3.6 GB</td><td class="num">3.7 GB</td></tr>
+        <tr><td>Training step time</td><td class="num">0.59 s</td><td class="num best">0.41 s</td><td class="num">0.42 s</td><td class="num best">0.41 s</td></tr>
+        <tr><td>Training memory</td><td class="num">21.2 GB</td><td class="num best">8.2 GB</td><td class="num best">8.2 GB</td><td class="num best">8.2 GB</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small" style="margin-top:12px">Single NVIDIA A40, 1200 px crops, bf16. Inference per image over 50 DDIM steps; compute per U-Net call. Trainable parameters include DarkDiff's context processor.</p>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>10</span></div>
+</section>
+
+<section class="slide" id="takeaways">
+  <p class="label">11 · Takeaways</p>
+  <h2>What we learned and what comes next</h2>
+  <div class="grid g2">
+    <div class="card accent"><div class="kicker">What we learned</div>
+      <ul class="ticks">
+        <li>PSNR disagreed with our visual ranking; SSIM and LPIPS agreed with it.</li>
+        <li>Distilled U-Nets cut inference memory by 55% and time by 40% versus SD 2.1.</li>
+        <li>SDXS-512 is fastest at 1.31 s, 43% less than SD 2.1.</li>
+      </ul></div>
+    <div class="card"><div class="kicker">Future work</div>
+      <ul class="ticks">
+        <li>Train to convergence and evaluate on ELD and LRD.</li>
+        <li>Pretrain smaller custom U-Nets and apply them to the task.</li>
+        <li>Fewer sampling steps through distillation or faster samplers.</li>
+        <li>Test across more cameras and real-world captures.</li>
+      </ul></div>
+  </div>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>11</span></div>
+</section>
+
+<section class="slide" id="references">
+  <p class="label">12 · References</p>
+  <h2>References</h2>
+  <ol class="refs">
+    <li>A. Y. Zheng et al. DarkDiff: Advancing low-light raw enhancement by retasking diffusion models for camera ISP. arXiv:2505.23743, 2025.</li>
+    <li>C. Chen et al. Learning to see in the dark. CVPR, 2018.</li>
+    <li>K. Wei et al. A physics-based noise formation model for extreme low-light raw denoising. CVPR, 2020.</li>
+    <li>F. Zhang et al. Towards general low-light raw noise synthesis and modeling. ICCV, 2023.</li>
+    <li>Y. Wang et al. ExposureDiffusion: Learning to expose for low-light image enhancement. ICCV, 2023.</li>
+    <li>Q. Wen et al. LDM-ISP: Enhancing neural ISP for low light with latent diffusion models. arXiv:2312.01027, 2023.</li>
+    <li>R. Rombach et al. High-resolution image synthesis with latent diffusion models. CVPR, 2022.</li>
+    <li>J. Ho, A. Jain and P. Abbeel. Denoising diffusion probabilistic models. NeurIPS, 2020.</li>
+    <li>O. Ronneberger, P. Fischer and T. Brox. U-Net: Convolutional networks for biomedical image segmentation. MICCAI, 2015.</li>
+    <li>Y. Song, Z. Sun and X. Yin. SDXS: Real-time one-step latent diffusion models with image conditions. arXiv:2403.16627, 2024.</li>
+    <li>X. Guo, Y. Li and H. Ling. LIME: Low-light image enhancement via illumination map estimation. IEEE TIP, 2017.</li>
+    <li>R. Zhang et al. The unreasonable effectiveness of deep features as a perceptual metric. CVPR, 2018.</li>
+    <li>B.-K. Kim et al. BK-SDM: A lightweight, fast, and cheap version of Stable Diffusion. ECCV, 2024.</li>
+    <li>Segmind. Tiny-SD: distilled from Realistic Vision 4.0. Hugging Face, 2023.</li>
+  </ol>
+  <div class="slide-foot"><span>Honey, I Shrunk the Diffusion</span><span>12</span></div>
+</section>
+
+</main>
+
+<footer>
+  AI61201 · Visual Computing with AI/ML · Ahon Bandyopadhyay &amp; Shamba Chowdhury · IIT Kharagpur
+</footer>
+
+</body>
+</html>
